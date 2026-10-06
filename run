@@ -7,9 +7,14 @@ set -e # Exit on any error
 
 # Configuration
 PLUGIN_NAME="visual-paradigm-mcp-plugin"
-PLUGIN_VERSION="0.1.0"
+PLUGIN_VERSION="0.2.0"
 MAVEN_OPTS="-Xmx1g"
-VP_PLUGINS_DIR="${HOME}/.config/VisualParadigm/plugins"
+MVN="${MVN:-mvn}"
+if [[ -n "${APPDATA:-}" ]]; then
+	VP_PLUGINS_DIR="${APPDATA}/VisualParadigm/plugins" # Windows
+else
+	VP_PLUGINS_DIR="${HOME}/.config/VisualParadigm/plugins"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -43,17 +48,9 @@ show_help() {
 	echo
 	echo "Commands:"
 	echo "  build       - Clean and build the plugin"
-	echo "  format      - Format Java code with Google Java Format"
 	echo "  test        - Run unit tests"
 	echo "  package     - Package the plugin for distribution"
 	echo "  install     - Install plugin to Visual Paradigm"
-	echo "  uninstall   - Remove plugin from Visual Paradigm"
-	echo "  clean       - Clean build artifacts"
-	echo "  validate    - Validate plugin configuration"
-	echo "  standalone  - Test standalone MCP server"
-	echo "  health      - Check plugin health"
-	echo "  spotbugs    - Run SpotBugs static analysis"
-	echo "  pmd         - Run PMD static analysis"
 	echo "  all         - Run build, test, package, and install"
 	echo "  help        - Show this help message"
 	echo
@@ -73,12 +70,12 @@ check_prerequisites() {
 	log_info "Java version: $java_version"
 
 	# Check Maven
-	if ! command -v mvn &>/dev/null; then
+	if ! command -v "$MVN" &>/dev/null; then
 		log_error "Maven is not installed or not in PATH"
 		return 1
 	fi
 
-	local maven_version=$(mvn -version 2>/dev/null | head -n1 | cut -d' ' -f3)
+	local maven_version=$("$MVN" -version 2>/dev/null | head -n1 | cut -d' ' -f3)
 	log_info "Maven version: $maven_version"
 
 	# Check if we're in the right directory
@@ -106,57 +103,36 @@ main() {
 		check_prerequisites
 		log_info "Building ${PLUGIN_NAME}..."
 		export MAVEN_OPTS
-		mvn clean compile
+		"$MVN" clean compile "${@:2}"
 		log_success "Build completed"
-		;;
-	format)
-		check_prerequisites
-		log_info "Formatting Java code with Google Java Format..."
-		export MAVEN_OPTS
-		mvn fmt:format
-		log_success "Code formatting completed"
 		;;
 	test)
 		check_prerequisites
 		log_info "Running tests for ${PLUGIN_NAME}..."
 		export MAVEN_OPTS
-		mvn test
+		"$MVN" test "${@:2}"
 		log_success "Tests completed"
 		;;
 	package)
 		check_prerequisites
 		log_info "Packaging ${PLUGIN_NAME}..."
 		export MAVEN_OPTS
-		mvn package
+		"$MVN" package "${@:2}"
 		log_success "Package created"
-		;;
-	spotbugs)
-		check_prerequisites
-		log_info "Running SpotBugs static analysis..."
-		export MAVEN_OPTS
-		mvn compile spotbugs:check
-		log_success "SpotBugs analysis completed"
-		;;
-	pmd)
-		check_prerequisites
-		log_info "Running PMD static analysis..."
-		export MAVEN_OPTS
-		mvn compile pmd:check
-		log_success "PMD analysis completed"
 		;;
 	install)
 		check_prerequisites
 		log_info "Installing ${PLUGIN_NAME} to Visual Paradigm..."
 		mkdir -p "$VP_PLUGINS_DIR"
 		export MAVEN_OPTS
-		mvn install -P install
+		"$MVN" install -P install "${@:2}"
 		log_success "Plugin installed"
 		;;
 	all)
 		check_prerequisites
 		log_info "Running complete build process..."
 		export MAVEN_OPTS
-		mvn clean compile test package install -P install
+		"$MVN" clean compile test package install -P install "${@:2}"
 		log_success "Complete build process finished"
 		;;
 	help)

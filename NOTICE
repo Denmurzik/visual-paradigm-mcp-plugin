@@ -1,0 +1,7 @@
+Visual Paradigm MCP Plugin
+
+Based on visual-paradigm-mcp-plugin by Manoel Brunnen
+(https://github.com/orgatex/visual-paradigm-mcp-plugin), licensed under the Apache License 2.0.
+
+Modified by Denis Muruev (2026): rewritten without Spring for Visual Paradigm 18.1 / Java 11,
+own HTTP/JSON/MCP layer, generic tools for all diagram types.

@@ -3,7 +3,6 @@
           xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
 
     <id>distribution</id>
-    <baseDirectory>${project.groupId}.${project.artifactId}</baseDirectory>
     <includeBaseDirectory>false</includeBaseDirectory>
     <formats>
         <format>dir</format>
@@ -15,17 +14,15 @@
             <includes>
                 <include>plugin.properties</include>
                 <include>plugin.xml</include>
+                <include>mcp.properties</include>
             </includes>
             <outputDirectory>.</outputDirectory>
         </fileSet>
     </fileSets>
-    <dependencySets>
-        <dependencySet>
+    <files>
+        <file>
+            <source>${project.build.directory}/${project.build.finalName}.jar</source>
             <outputDirectory>lib</outputDirectory>
-            <outputFileNameMapping>${artifact.artifactId}.${artifact.extension}</outputFileNameMapping>
-            <useTransitiveDependencies>true</useTransitiveDependencies>
-            <useProjectArtifact>true</useProjectArtifact>
-            <scope>runtime</scope>
-        </dependencySet>
-    </dependencySets>
+        </file>
+    </files>
 </assembly>

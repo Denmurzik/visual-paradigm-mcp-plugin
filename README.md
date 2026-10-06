@@ -1,18 +1,25 @@
 # Visual Paradigm MCP Plugin
 
+> Fork of [orgatex/visual-paradigm-mcp-plugin](https://github.com/orgatex/visual-paradigm-mcp-plugin)
+> by Manoel Brunnen, rewritten for Visual Paradigm 18.1 (incl. the free Community Edition):
+> no Spring, runs on VP's bundled Java 11, and supports all UML diagram types.
+
 A Model Context Protocol (MCP) server plugin for Visual Paradigm that provides
 AI applications with seamless integration to Visual Paradigm's modeling and
-diagramming modeling capabilities. The MCP server is embedded directly within
+diagramming capabilities. The MCP server is embedded directly within
 the Visual Paradigm plugin, starting automatically when the plugin loads.
 
 ## Architecture
 
-- **Spring AI 1.1.0-M1**: Model Context Protocol server integration
-- **Visual Paradigm 17.2**: UML modeling platform integration
-- **Maven**: Build automation and dependency management
-- **MCP Transport**: Streamable HTTP communication with MCP clients
-- **Visual Paradigm Plugin API**: Integration with Visual Paradigm's modeling capabilities
-- **JUnit & Mockito**: Comprehensive testing framework
+- **Visual Paradigm 18.1** (also Community Edition): UML modeling platform integration
+- **Java 11, no third-party dependencies**: Visual Paradigm runs plugins on its bundled
+  Java 11 runtime, which also lacks the `jdk.httpserver` module. The plugin therefore ships
+  its own small HTTP server, JSON reader/writer and MCP (JSON-RPC) layer.
+- **MCP Transport**: Streamable HTTP (POST, JSON responses) on `127.0.0.1` only
+- **Visual Paradigm Plugin API**: All model access runs on the Swing event dispatch thread,
+  each change as one undoable project transaction
+- **Maven**: Build automation
+- **JUnit 5**: Tests for the HTTP, JSON, MCP and reflection layers
 
 ## Features
 
@@ -22,16 +29,39 @@ The plugin includes an embedded MCP server that:
 
 - **Auto-starts** when Visual Paradigm plugin is loaded
 - **Auto-stops** when Visual Paradigm plugin is unloaded
-- Runs on **port 8080** with SSE endpoint `/mcp/messages`
+- Runs on **port 8931** with endpoint `/mcp` (configurable in `mcp.properties`
+  in the installed plugin folder, or with `-Dvp.mcp.port=...`)
 - Provides **tool capabilities** for external MCP clients
 
 #### Available MCP Tools
 
-- **createUseCaseDiagram(diagramName)**: Create new use case diagrams
-- **addActor(actorName, diagramName)**: Add actors to specific diagrams
-- **addUseCase(useCaseName, diagramName)**: Add use cases to diagrams
-- **addRelationship(actorName, useCaseName, relationshipType)**: Create relationships between actors and use cases
-- **generateReport(diagramName)**: Generate reports for use case diagrams
+The tools are generic: element and relationship types are Visual Paradigm model type
+names, so every diagram type is supported. Use case, activity (with swimlanes), sequence,
+class, ER and state machine diagrams are tested.
+
+| Tool | Purpose |
+| --- | --- |
+| `vp_get_project_info` | Open project: name, file, unsaved changes, VP version |
+| `vp_new_project`, `vp_open_project`, `vp_save_project` | Project files |
+| `vp_list_diagrams`, `vp_get_diagram` | Diagrams and their shapes/connectors |
+| `vp_find_elements`, `vp_get_element` | Search the model, read properties, relationships, flows of events |
+| `vp_list_types` | Shape types a diagram accepts |
+| `vp_create_diagram` | Create any diagram type |
+| `vp_build_diagram` | Many shapes and connectors in one call, referenced by own keys |
+| `vp_add_shape`, `vp_add_connector`, `vp_add_child` | Single elements, relationships, members (attributes, operations, columns, ...) |
+| `vp_update_element`, `vp_delete`, `vp_set_bounds` | Rename, set properties, delete (model or view only), move with connectors |
+| `vp_set_use_case_details` | Pre/post conditions, actors, flows of events |
+| `vp_cleanup_extension_points` | Remove the "ExtensionPoint" entries VP adds for every Extend |
+| `vp_layout_diagram`, `vp_open_diagram` | Automatic layout (`boundary` for System boundaries, `reroute` to redraw connectors only), show in VP |
+| `vp_export_diagram_image` | PNG/JPG/SVG/PDF export; PNG can be returned to the AI to look at |
+
+Relationships are always given in UML reading direction (child → parent for
+Generalization, class → interface for Realization, extension → base use case for Extend);
+the plugin converts this to Visual Paradigm's internal direction.
+
+Properties can be any setter of the Visual Paradigm model object without the `set` prefix
+(`visibility`, `multiplicity`, `abstract`, `primaryKey`, `guard`, ...); int enumerations
+accept their constant names, `from.`/`to.` prefixes address association ends.
 
 #### Future MCP Features (Planned)
 
@@ -46,22 +76,38 @@ The plugin includes an embedded MCP server that:
 - Use Case Templates: Generate standard use case patterns
 - Diagram Validation: Check diagram completeness and consistency
 
-### Plugin User Interface
-
-- **Toggle MCP Server**: Start/stop the MCP server from Visual Paradigm toolbar
-- **Server Status**: View detailed MCP server status and capabilities
-
 ### Plugin Integration
 
 - **Automatic Lifecycle Management**: MCP server starts/stops with plugin
-- **Error Handling**: Robust startup/shutdown with detailed logging
-- **Spring Boot Integration**: Full Spring framework capabilities within Visual Paradigm
+- **Error Handling**: Startup problems (e.g. port in use) are shown in Visual Paradigm's
+  message pane and in `vp.log`; tool errors are returned to the client as readable messages
+- **Security**: Listens on the loopback interface only and rejects non-local browser origins
 
 ## Usage
 
 ### Installation
 
-Build, test and install with the `./run` command:
+#### From a release (no build tools needed)
+
+1. Install [Visual Paradigm](https://www.visual-paradigm.com/download/) 18.1 or later
+   (Community Edition works).
+2. Download `visual-paradigm-mcp-plugin-<version>.zip` from the
+   [Releases](../../releases) page.
+3. Close Visual Paradigm and unzip the archive into the Visual Paradigm plugins folder, so that
+   you get `<plugins>/visual-paradigm-mcp-plugin/plugin.xml`:
+   - Windows: `%APPDATA%\VisualParadigm\plugins`
+   - Linux: `~/.config/VisualParadigm/plugins`
+4. Start Visual Paradigm. `vp.log` (Windows: `%APPDATA%\VisualParadigm\vp.log`) shows
+   `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp`.
+5. Connect your MCP client (see below).
+
+Tested on Windows 11 with Visual Paradigm Community Edition 18.1.
+
+#### From source
+
+Build, test and install with the `./run` command. Set `MVN=/path/to/mvn` if Maven is not on
+the `PATH`. Extra arguments are passed to Maven, e.g. `./run install -Dvp.home="D:/VP 18.1"`
+if Visual Paradigm is not installed in `C:/Program Files/Visual Paradigm CE 18.1`:
 
 1. **Build the plugin**:
 
@@ -75,7 +121,7 @@ Build, test and install with the `./run` command:
    ./run package
    ```
 
-3. **Install to Visual Paradigm**:
+3. **Install to Visual Paradigm** (close Visual Paradigm first, it locks the plugin jars):
 
    ```bash
    ./run install
@@ -87,22 +133,37 @@ Build, test and install with the `./run` command:
 
 Once Visual Paradigm is running with the plugin:
 
-- **MCP Server Endpoint**: `http://localhost:8080/mcp/messages` (SSE)
-- **Server Name**: `visual-paradigm-use-case-mcp-server`
-- **Available Tools**: 5 use case diagram operations
+- **MCP Server Endpoint**: `http://127.0.0.1:8931/mcp` (Streamable HTTP)
+- **Server Name**: `visual-paradigm`
+- **Available Tools**: 22 tools (see above)
 
 #### Connecting with Claude or MCP Clients
 
-Configure your MCP client to connect to:
+Claude Code:
+
+```bash
+claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp
+```
+
+Other clients:
 
 ```json
 {
-  "transport": {
-    "type": "sse",
-    "url": "http://localhost:8080/mcp/messages"
+  "mcpServers": {
+    "visual-paradigm": {
+      "type": "http",
+      "url": "http://127.0.0.1:8931/mcp"
+    }
   }
 }
 ```
+
+The server only exists while Visual Paradigm is running. Claude Code loads the tool list when a
+session starts, so restart the session after installing or updating the plugin.
+
+Tips for good results: let the AI look at its work with `vp_export_diagram_image`, save with
+`vp_save_project` (changes are not saved automatically), and close dialogs that Visual Paradigm
+opens - while a modal dialog is open, changes are refused with a "busy" message.
 
 ## Development
 
@@ -115,60 +176,48 @@ Configure your MCP client to connect to:
 ./run all          # Build, test, package, and install
 ```
 
-### Code Quality
-
-```bash
-./run format       # Format code with Google Java Format
-./run spotbugs     # Run SpotBugs static analysis
-./run pmd          # Run PMD static analysis
-```
-
 ### Testing
 
-- **Unit and Integration Tests**: Comprehensive Mockito/JUnit tests for all components
-- **System Tests**: MCP Inspector protocol validation
-- **Manual Testing**: Visual Paradigm UI integration testing
-- **Spring Context Tests**: Verify MCP server configuration
-- **Tool Service Tests**: Validate all MCP tool implementations
-- **Plugin Lifecycle Tests**: Test integration with Visual Paradigm
+- **Unit Tests**: JSON, HTTP server (sockets, chunked bodies, keep-alive), MCP JSON-RPC
+  handling and reflective property setting
+- **Manual Testing**: Visual Paradigm integration through the MCP tools
 
-#### Unit and Integration Tests
+#### Unit Tests
 
 ```bash
 ./run test
 ```
 
-#### MCP Protocol Testing (Future)
-
-Test with MCP Inspector for protocol validation:
+#### MCP Protocol Testing
 
 ```bash
-./run inspector test
-```
-
-Display all MCP features and their descriptions:
-
-```bash
-./run inspector list
+curl -s -X POST http://127.0.0.1:8931/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 ### Debugging
 
-**MCP Server Logging**: Check Visual Paradigm console output for:
+**MCP Server Logging**: Check `%APPDATA%\VisualParadigm\vp.log` (Windows) for lines starting
+with `[vp-mcp]`:
 
-- `"MCP Server started for Use Case Plugin"` - successful startup
-- `"MCP Server stopped"` - clean shutdown
-- Error messages if startup fails
+- `MCP server listening on http://127.0.0.1:8931/mcp (22 tools)` - successful startup
+- `MCP server stopped` - clean shutdown
+- `MCP server could not start on port ...` - e.g. the port is used by another program
 
-**Configuration**: Located in `src/main/resources/application-mcp.properties`
+**Configuration**: `mcp.properties` in the installed plugin folder
 
 ```properties
-logging.level.org.springframework.ai.mcp=DEBUG
-logging.level.root=INFO
+port=8931
 ```
 
 ### Support
 
 - **MCP Protocol**: [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-06-18/architecture)
-- **Spring AI**: [Spring AI MCP Documentation](https://docs.spring.io/spring-ai/reference/1.1/api/mcp/mcp-overview.html)
 - **Visual Paradigm**: [Plugin API Documentation](https://www.visual-paradigm.com/support/documents/pluginjavadoc/)
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). Visual Paradigm is a trademark
+of Visual Paradigm International; this project is not affiliated with it. The Visual Paradigm
+Open API (`openapi.jar`) is not included; it is taken from the local Visual Paradigm
+installation at build time.
