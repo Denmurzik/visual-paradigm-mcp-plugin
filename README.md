@@ -1,5 +1,7 @@
 # Visual Paradigm MCP Plugin
 
+**English** | [Русский](README.ru.md)
+
 > Fork of [orgatex/visual-paradigm-mcp-plugin](https://github.com/orgatex/visual-paradigm-mcp-plugin)
 > by Manoel Brunnen, rewritten for Visual Paradigm 18.1 (incl. the free Community Edition):
 > no Spring, runs on VP's bundled Java 11, and supports all UML diagram types.
