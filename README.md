@@ -113,7 +113,7 @@ argument changes the presentation of a shape, e.g. `{"displayStereotypeIcon": fa
    - Linux: `~/.config/VisualParadigm/plugins`
 4. Start Visual Paradigm. `vp.log` (Windows: `%APPDATA%\VisualParadigm\vp.log`) shows
    `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp`.
-5. Connect your MCP client (see below).
+5. Connect your AI client and install the skill (see below).
 
 Tested on Windows 11 with Visual Paradigm Community Edition 18.1.
 
@@ -151,15 +151,22 @@ Once Visual Paradigm is running with the plugin:
 - **Server Name**: `visual-paradigm`
 - **Available Tools**: 26 tools (see above)
 
-#### Connecting with Claude or MCP Clients
+#### Connecting an AI client
 
-Claude Code:
+Visual Paradigm must be running with the plugin; the server lives at
+`http://127.0.0.1:8931/mcp` (Streamable HTTP). Register it once in your client:
 
-```bash
-claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp
-```
+| Client | Command |
+| --- | --- |
+| Claude Code | `claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp` |
+| Codex CLI | `codex mcp add visual-paradigm --url http://127.0.0.1:8931/mcp` |
+| OpenCode | `opencode mcp add visual-paradigm --url http://127.0.0.1:8931/mcp` |
+| Antigravity CLI (`agy`) | `agy mcp add visual-paradigm http://127.0.0.1:8931/mcp` |
 
-Other clients:
+Check: `claude mcp list`, `codex mcp list`, `opencode mcp list` or `agy mcp list`. All four were
+tested with this server (Claude Code, Codex CLI 0.160, OpenCode 1.18, Antigravity CLI 1.2).
+
+Other clients use the usual JSON configuration:
 
 ```json
 {
@@ -172,13 +179,38 @@ Other clients:
 }
 ```
 
-The server only exists while Visual Paradigm is running. Claude Code loads the tool list when a
-session starts, so restart the session after installing or updating the plugin.
+Clients load the tool list when a session starts: restart the session after installing or
+updating the plugin. The server only exists while Visual Paradigm is running.
 
-Tips for good results: let the AI look at its work with `vp_export_diagram_image`, save with
-`vp_save_project` (changes are not saved automatically), and close dialogs that Visual Paradigm
-opens - while a modal dialog is open, changes are refused with a "busy" message; the AI can
-read and answer it with `vp_list_dialogs` / `vp_press_dialog_button`.
+#### Installing the skill (recommended)
+
+The MCP server tells the model what each tool does; the **`visual-paradigm` skill** in
+[`skills/visual-paradigm`](skills/visual-paradigm) adds how to work with it well: which tool to
+use for which diagram, UML direction conventions, checking the result as an image, saving,
+answering Visual Paradigm dialogs, and tested examples for every diagram type. Install it next to
+the MCP server - the folder works unchanged in all four clients:
+
+| Client | Copy `skills/visual-paradigm` to |
+| --- | --- |
+| Claude Code | `~/.claude/skills/visual-paradigm` (or `.claude/skills/` in a project) |
+| Codex CLI | `~/.codex/skills/visual-paradigm` |
+| OpenCode | `~/.config/opencode/skills/visual-paradigm` |
+| Antigravity CLI | `~/.gemini/antigravity/skills/visual-paradigm` (or `.agent/skills/` in a workspace) |
+
+For example (bash, from a clone of this repository or the unpacked `visual-paradigm-skill.zip`
+from the release):
+
+```bash
+mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/
+```
+
+PowerShell:
+
+```powershell
+Copy-Item -Recurse skills\visual-paradigm "$HOME\.claude\skills\"
+```
+
+Restart the client session afterwards.
 
 ## Development
 

@@ -113,7 +113,7 @@ Paradigm. Сервер запускается автоматически при 
    - Linux: `~/.config/VisualParadigm/plugins`
 4. Запустите Visual Paradigm. В `vp.log` (Windows: `%APPDATA%\VisualParadigm\vp.log`) появится
    строка `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp`.
-5. Подключите MCP-клиент (см. ниже).
+5. Подключите ИИ-клиент и установите скилл (см. ниже).
 
 Проверено на Windows 11 с Visual Paradigm Community Edition 18.1.
 
@@ -153,15 +153,23 @@ Paradigm. Сервер запускается автоматически при 
 - **Имя сервера:** `visual-paradigm`
 - **Инструментов:** 26 (см. выше)
 
-#### Подключение Claude и других MCP-клиентов
+#### Подключение ИИ-клиента
 
-Claude Code:
+Visual Paradigm должна быть запущена с плагином; сервер работает по адресу
+`http://127.0.0.1:8931/mcp` (Streamable HTTP). Зарегистрируйте его один раз в своём клиенте:
 
-```bash
-claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp
-```
+| Клиент | Команда |
+| --- | --- |
+| Claude Code | `claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp` |
+| Codex CLI | `codex mcp add visual-paradigm --url http://127.0.0.1:8931/mcp` |
+| OpenCode | `opencode mcp add visual-paradigm --url http://127.0.0.1:8931/mcp` |
+| Antigravity CLI (`agy`) | `agy mcp add visual-paradigm http://127.0.0.1:8931/mcp` |
 
-Другие клиенты:
+Проверка: `claude mcp list`, `codex mcp list`, `opencode mcp list` или `agy mcp list`. Все четыре
+клиента проверены с этим сервером (Claude Code, Codex CLI 0.160, OpenCode 1.18,
+Antigravity CLI 1.2).
+
+Другие клиенты настраиваются обычным JSON-конфигом:
 
 ```json
 {
@@ -174,13 +182,37 @@ claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mc
 }
 ```
 
-Сервер работает только пока открыта Visual Paradigm. Claude Code загружает список инструментов
-при старте сессии, поэтому после установки или обновления плагина перезапустите сессию.
+Клиенты загружают список инструментов при старте сессии: после установки или обновления плагина
+перезапустите сессию. Сервер работает только пока открыта Visual Paradigm.
 
-Советы: просите ИИ проверять результат через `vp_export_diagram_image`; сохраняйте проект через
-`vp_save_project` (изменения не сохраняются сами); закрывайте диалоги, которые открывает Visual
-Paradigm, — пока открыт модальный диалог, изменения отклоняются с сообщением «busy»; ИИ может
-прочитать такой диалог и ответить на него через `vp_list_dialogs` / `vp_press_dialog_button`.
+#### Установка скилла (рекомендуется)
+
+MCP-сервер сообщает модели, что делает каждый инструмент, а **скилл `visual-paradigm`** из
+[`skills/visual-paradigm`](skills/visual-paradigm) — как с ними хорошо работать: какой инструмент
+брать для какой диаграммы, направления связей в UML, проверка результата по картинке, сохранение,
+ответы на диалоги Visual Paradigm и проверенные примеры для каждого типа диаграмм. Установите его
+вместе с MCP-сервером — папка без изменений подходит всем четырём клиентам:
+
+| Клиент | Куда скопировать `skills/visual-paradigm` |
+| --- | --- |
+| Claude Code | `~/.claude/skills/visual-paradigm` (или `.claude/skills/` в проекте) |
+| Codex CLI | `~/.codex/skills/visual-paradigm` |
+| OpenCode | `~/.config/opencode/skills/visual-paradigm` |
+| Antigravity CLI | `~/.gemini/antigravity/skills/visual-paradigm` (или `.agent/skills/` в рабочей папке) |
+
+Например (bash, из клона репозитория или распакованного `visual-paradigm-skill.zip` из релиза):
+
+```bash
+mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/
+```
+
+PowerShell:
+
+```powershell
+Copy-Item -Recurse skills\visual-paradigm "$HOME\.claude\skills\"
+```
+
+После этого перезапустите сессию клиента.
 
 ## Разработка
 
