@@ -101,49 +101,66 @@ Paradigm. Сервер запускается автоматически при 
 
 ### Установка
 
-#### Из релиза (без инструментов сборки)
+Три шага, одинаковые для всех ОС: **установить плагин** в Visual Paradigm, **подключить ИИ-клиент**,
+**установить скилл**. Для релиза не нужны ни Java, ни Maven — Visual Paradigm приносит свою среду.
+
+#### 1. Установка плагина
 
 1. Установите [Visual Paradigm](https://www.visual-paradigm.com/download/) 18.1 или новее
-   (подходит Community Edition).
-2. Скачайте `visual-paradigm-mcp-plugin-<версия>.zip` со страницы
-   [Releases](../../releases).
-3. Закройте Visual Paradigm и распакуйте архив в папку плагинов так, чтобы получилось
-   `<plugins>/visual-paradigm-mcp-plugin/plugin.xml`:
-   - Windows: `%APPDATA%\VisualParadigm\plugins`
-   - Linux: `~/.config/VisualParadigm/plugins`
-4. Запустите Visual Paradigm. В `vp.log` (Windows: `%APPDATA%\VisualParadigm\vp.log`) появится
-   строка `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp`.
-5. Подключите ИИ-клиент и установите скилл (см. ниже).
+   (подходит бесплатная Community Edition).
+2. Скачайте `visual-paradigm-mcp-plugin-<версия>.zip` со страницы [Releases](../../releases) и
+   распакуйте. Получится папка `visual-paradigm-mcp-plugin` с файлом `plugin.xml`.
+3. В Visual Paradigm откройте **Help > Install Plugin**, выберите **Install from a folder of
+   plugin** и укажите папку `visual-paradigm-mcp-plugin`. Перезапустите Visual Paradigm.
 
-Проверено на Windows 11 с Visual Paradigm Community Edition 18.1.
+   Или скопируйте папку вручную, пока Visual Paradigm закрыта. Точную папку плагинов на вашем
+   компьютере показывает **Help > Install Plugin > Copy Path**; обычно это:
+
+   | ОС | Папка плагинов |
+   | --- | --- |
+   | Windows | `%APPDATA%\VisualParadigm\plugins` |
+   | macOS | `~/Library/Application Support/VisualParadigm/plugins` |
+   | Linux | `~/.config/VisualParadigm/plugins` (в старых версиях `~/VisualParadigm/plugins`) |
+
+   В итоге должно получиться `<папка плагинов>/visual-paradigm-mcp-plugin/plugin.xml`.
+4. Запустите Visual Paradigm. В журнале `vp.log` в пользовательской папке Visual Paradigm (на
+   уровень выше папки плагинов, на Windows `%APPDATA%\VisualParadigm\vp.log`) появится строка
+   `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp (26 tools)`.
+
+Для обновления закройте Visual Paradigm, замените папку `visual-paradigm-mcp-plugin` и запустите
+её снова (пока Visual Paradigm открыта, она блокирует jar-файл плагина).
+
+Проверено на Windows 11 с Visual Paradigm Community Edition 18.1. Плагин — обычная Java 11 без
+нативного кода, поэтому на macOS и Linux всё работает так же, различаются только папки.
 
 #### Из исходников
 
-Сборка, тесты и установка выполняются командой `./run`. Если Maven не в `PATH`, укажите
-`MVN=/путь/к/mvn`. Дополнительные аргументы передаются в Maven, например
-`./run install -Dvp.home="D:/VP 18.1"`, если Visual Paradigm установлен не в
-`C:/Program Files/Visual Paradigm CE 18.1`:
+Нужны JDK 11 или новее, Maven 3.9 и установленная Visual Paradigm (сборка компилируется против
+её `openapi.jar`).
 
-1. **Собрать плагин:**
+Сборка, тесты и установка выполняются командой `./run` (bash; на Windows — Git Bash или прямой
+вызов Maven с теми же аргументами). Если Maven не в `PATH`, укажите `MVN=/путь/к/mvn`.
+Дополнительные аргументы передаются в Maven:
 
-   ```bash
-   ./run build
-   ```
+| Свойство | Что это | По умолчанию |
+| --- | --- | --- |
+| `vp.lib.dir` | папка с `openapi.jar` (`lib` или `bundled` в установке VP) | Windows: `C:/Program Files/Visual Paradigm CE 18.1/lib`, Linux: `~/Visual_Paradigm_18.1/lib` |
+| `vp.plugins.dir` | папка плагинов Visual Paradigm для `./run install` | Windows: `%APPDATA%/VisualParadigm/plugins`, Linux/macOS: `~/.config/VisualParadigm/plugins` |
 
-2. **Упаковать дистрибутив:**
+```bash
+# Windows (Git Bash), установка по умолчанию
+./run all
 
-   ```bash
-   ./run package
-   ```
+# macOS
+./run all -Dvp.lib.dir="/Applications/Visual Paradigm.app/<путь к папке с openapi.jar>" \
+          -Dvp.plugins.dir="$HOME/Library/Application Support/VisualParadigm/plugins"
 
-3. **Установить в Visual Paradigm** (сначала закройте Visual Paradigm, она блокирует jar-файлы
-   плагина):
+# Linux
+./run all -Dvp.lib.dir="$HOME/Visual_Paradigm_18.1/lib"
+```
 
-   ```bash
-   ./run install
-   ```
-
-4. **Запустить Visual Paradigm** — MCP-сервер стартует автоматически.
+`./run all` собирает, запускает тесты и устанавливает; `./run build`, `./run test`, `./run package` и
+`./run install` выполняют отдельные шаги. Перед установкой закройте Visual Paradigm.
 
 ### Работа с MCP-сервером
 
@@ -153,7 +170,7 @@ Paradigm. Сервер запускается автоматически при 
 - **Имя сервера:** `visual-paradigm`
 - **Инструментов:** 26 (см. выше)
 
-#### Подключение ИИ-клиента
+#### 2. Подключение ИИ-клиента
 
 Visual Paradigm должна быть запущена с плагином; сервер работает по адресу
 `http://127.0.0.1:8931/mcp` (Streamable HTTP). Зарегистрируйте его один раз в своём клиенте:
@@ -185,7 +202,7 @@ Antigravity CLI 1.2).
 Клиенты загружают список инструментов при старте сессии: после установки или обновления плагина
 перезапустите сессию. Сервер работает только пока открыта Visual Paradigm.
 
-#### Установка скилла (рекомендуется)
+#### 3. Установка скилла (рекомендуется)
 
 MCP-сервер сообщает модели, что делает каждый инструмент, а **скилл `visual-paradigm`** из
 [`skills/visual-paradigm`](skills/visual-paradigm) — как с ними хорошо работать: какой инструмент
@@ -200,19 +217,29 @@ MCP-сервер сообщает модели, что делает каждый
 | OpenCode | `~/.config/opencode/skills/visual-paradigm` |
 | Antigravity CLI | `~/.gemini/antigravity/skills/visual-paradigm` (или `.agent/skills/` в рабочей папке) |
 
-Например (bash, из клона репозитория или распакованного `visual-paradigm-skill.zip` из релиза):
+Команды (из клона репозитория или после распаковки `visual-paradigm-skill.zip` из релиза — тогда
+вместо `skills/visual-paradigm` укажите `visual-paradigm`):
+
+macOS / Linux:
 
 ```bash
-mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/
+mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/                    # Claude Code
+mkdir -p ~/.codex/skills && cp -r skills/visual-paradigm ~/.codex/skills/                      # Codex CLI
+mkdir -p ~/.config/opencode/skills && cp -r skills/visual-paradigm ~/.config/opencode/skills/  # OpenCode
+mkdir -p ~/.gemini/antigravity/skills && cp -r skills/visual-paradigm ~/.gemini/antigravity/skills/  # Antigravity
 ```
 
-PowerShell:
+Windows (PowerShell):
 
 ```powershell
-Copy-Item -Recurse skills\visual-paradigm "$HOME\.claude\skills\"
+foreach ($d in "$HOME\.claude\skills", "$HOME\.codex\skills",
+               "$HOME\.config\opencode\skills", "$HOME\.gemini\antigravity\skills") {
+  New-Item -ItemType Directory -Force $d | Out-Null
+  Copy-Item -Recurse -Force skills\visual-paradigm $d
+}
 ```
 
-После этого перезапустите сессию клиента.
+Копируйте только в те клиенты, которыми пользуетесь. После этого перезапустите сессию клиента.
 
 ## Разработка
 

@@ -101,47 +101,68 @@ argument changes the presentation of a shape, e.g. `{"displayStereotypeIcon": fa
 
 ### Installation
 
-#### From a release (no build tools needed)
+Three steps, the same on every operating system: **install the plugin** in Visual Paradigm,
+**connect your AI client**, **install the skill**. The release needs no Java or Maven -
+Visual Paradigm brings its own runtime.
+
+#### 1. Install the plugin
 
 1. Install [Visual Paradigm](https://www.visual-paradigm.com/download/) 18.1 or later
-   (Community Edition works).
-2. Download `visual-paradigm-mcp-plugin-<version>.zip` from the
-   [Releases](../../releases) page.
-3. Close Visual Paradigm and unzip the archive into the Visual Paradigm plugins folder, so that
-   you get `<plugins>/visual-paradigm-mcp-plugin/plugin.xml`:
-   - Windows: `%APPDATA%\VisualParadigm\plugins`
-   - Linux: `~/.config/VisualParadigm/plugins`
-4. Start Visual Paradigm. `vp.log` (Windows: `%APPDATA%\VisualParadigm\vp.log`) shows
-   `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp`.
-5. Connect your AI client and install the skill (see below).
+   (the free Community Edition works).
+2. Download `visual-paradigm-mcp-plugin-<version>.zip` from the [Releases](../../releases) page
+   and unzip it. You get a folder `visual-paradigm-mcp-plugin` containing `plugin.xml`.
+3. In Visual Paradigm open **Help > Install Plugin**, choose **Install from a folder of plugin**
+   and select that `visual-paradigm-mcp-plugin` folder. Restart Visual Paradigm.
 
-Tested on Windows 11 with Visual Paradigm Community Edition 18.1.
+   Or copy the folder manually while Visual Paradigm is closed. **Help > Install Plugin >
+   Copy Path** shows the exact plugins directory on your machine; the usual locations are:
+
+   | OS | Plugins directory |
+   | --- | --- |
+   | Windows | `%APPDATA%\VisualParadigm\plugins` |
+   | macOS | `~/Library/Application Support/VisualParadigm/plugins` |
+   | Linux | `~/.config/VisualParadigm/plugins` (older versions: `~/VisualParadigm/plugins`) |
+
+   The result must be `<plugins directory>/visual-paradigm-mcp-plugin/plugin.xml`.
+4. Start Visual Paradigm. The log file `vp.log` in the Visual Paradigm user directory (the parent
+   of the plugins directory, e.g. `%APPDATA%\VisualParadigm\vp.log` on Windows) shows
+   `[vp-mcp] MCP server listening on http://127.0.0.1:8931/mcp (26 tools)`.
+
+To update, close Visual Paradigm, replace the `visual-paradigm-mcp-plugin` folder and start it
+again (Visual Paradigm locks the plugin's jar while it runs, so the folder cannot be replaced
+while it is open).
+
+Tested on Windows 11 with Visual Paradigm Community Edition 18.1. The plugin is plain Java 11
+without native code, so macOS and Linux work the same way; there only the directories differ.
 
 #### From source
 
-Build, test and install with the `./run` command. Set `MVN=/path/to/mvn` if Maven is not on
-the `PATH`. Extra arguments are passed to Maven, e.g. `./run install -Dvp.home="D:/VP 18.1"`
-if Visual Paradigm is not installed in `C:/Program Files/Visual Paradigm CE 18.1`:
+Requirements: JDK 11 or newer, Maven 3.9, and Visual Paradigm installed (the build compiles
+against its `openapi.jar`).
 
-1. **Build the plugin**:
+Build, test and install with the `./run` command (bash; on Windows use Git Bash, or call Maven
+directly with the same arguments). Set `MVN=/path/to/mvn` if Maven is not on the `PATH`. Extra
+arguments are passed to Maven:
 
-   ```bash
-   ./run build
-   ```
+| Property | Meaning | Default |
+| --- | --- | --- |
+| `vp.lib.dir` | folder that contains `openapi.jar` (`lib` or `bundled` in the VP installation) | Windows: `C:/Program Files/Visual Paradigm CE 18.1/lib`, Linux: `~/Visual_Paradigm_18.1/lib` |
+| `vp.plugins.dir` | Visual Paradigm plugins directory for `./run install` | Windows: `%APPDATA%/VisualParadigm/plugins`, Linux/macOS: `~/.config/VisualParadigm/plugins` |
 
-2. **Package for distribution**:
+```bash
+# Windows (Git Bash), default installation
+./run all
 
-   ```bash
-   ./run package
-   ```
+# macOS
+./run all -Dvp.lib.dir="/Applications/Visual Paradigm.app/<path to the folder with openapi.jar>" \
+          -Dvp.plugins.dir="$HOME/Library/Application Support/VisualParadigm/plugins"
 
-3. **Install to Visual Paradigm** (close Visual Paradigm first, it locks the plugin jars):
+# Linux
+./run all -Dvp.lib.dir="$HOME/Visual_Paradigm_18.1/lib"
+```
 
-   ```bash
-   ./run install
-   ```
-
-4. **Start Visual Paradigm** - the MCP server will start automatically
+`./run all` builds, runs the tests and installs; `./run build`, `./run test`, `./run package` and
+`./run install` do single steps. Close Visual Paradigm before installing.
 
 ### Using the MCP Server
 
@@ -151,7 +172,7 @@ Once Visual Paradigm is running with the plugin:
 - **Server Name**: `visual-paradigm`
 - **Available Tools**: 26 tools (see above)
 
-#### Connecting an AI client
+#### 2. Connect an AI client
 
 Visual Paradigm must be running with the plugin; the server lives at
 `http://127.0.0.1:8931/mcp` (Streamable HTTP). Register it once in your client:
@@ -182,7 +203,7 @@ Other clients use the usual JSON configuration:
 Clients load the tool list when a session starts: restart the session after installing or
 updating the plugin. The server only exists while Visual Paradigm is running.
 
-#### Installing the skill (recommended)
+#### 3. Install the skill (recommended)
 
 The MCP server tells the model what each tool does; the **`visual-paradigm` skill** in
 [`skills/visual-paradigm`](skills/visual-paradigm) adds how to work with it well: which tool to
@@ -197,20 +218,29 @@ the MCP server - the folder works unchanged in all four clients:
 | OpenCode | `~/.config/opencode/skills/visual-paradigm` |
 | Antigravity CLI | `~/.gemini/antigravity/skills/visual-paradigm` (or `.agent/skills/` in a workspace) |
 
-For example (bash, from a clone of this repository or the unpacked `visual-paradigm-skill.zip`
-from the release):
+Commands (from a clone of this repository, or after unpacking `visual-paradigm-skill.zip` from the
+release - then use `visual-paradigm` instead of `skills/visual-paradigm`):
+
+macOS / Linux:
 
 ```bash
-mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/
+mkdir -p ~/.claude/skills && cp -r skills/visual-paradigm ~/.claude/skills/                    # Claude Code
+mkdir -p ~/.codex/skills && cp -r skills/visual-paradigm ~/.codex/skills/                      # Codex CLI
+mkdir -p ~/.config/opencode/skills && cp -r skills/visual-paradigm ~/.config/opencode/skills/  # OpenCode
+mkdir -p ~/.gemini/antigravity/skills && cp -r skills/visual-paradigm ~/.gemini/antigravity/skills/  # Antigravity
 ```
 
-PowerShell:
+Windows (PowerShell):
 
 ```powershell
-Copy-Item -Recurse skills\visual-paradigm "$HOME\.claude\skills\"
+foreach ($d in "$HOME\.claude\skills", "$HOME\.codex\skills",
+               "$HOME\.config\opencode\skills", "$HOME\.gemini\antigravity\skills") {
+  New-Item -ItemType Directory -Force $d | Out-Null
+  Copy-Item -Recurse -Force skills\visual-paradigm $d
+}
 ```
 
-Restart the client session afterwards.
+Copy only to the clients you use. Restart the client session afterwards.
 
 ## Development
 
