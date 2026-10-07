@@ -5,7 +5,7 @@
 
     <groupId>com.brunnen.vp</groupId>
     <artifactId>visual-paradigm-mcp-plugin</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
     <packaging>jar</packaging>
 
     <licenses>

@@ -31,6 +31,10 @@ class ReflectTest {
 
     void setTags(String[] tags);
 
+    void setLabel(String label);
+
+    void setLabel(Thing label);
+
     Thing createChild();
   }
 
@@ -42,6 +46,7 @@ class ReflectTest {
     Object type;
     Thing owner;
     String[] tags;
+    Object label;
 
     @Override
     public void setName(String name) {
@@ -76,6 +81,16 @@ class ReflectTest {
     @Override
     public void setTags(String[] tags) {
       this.tags = tags;
+    }
+
+    @Override
+    public void setLabel(String label) {
+      this.label = label;
+    }
+
+    @Override
+    public void setLabel(Thing label) {
+      this.label = label;
     }
 
     @Override
@@ -146,5 +161,15 @@ class ReflectTest {
     Object child = Reflect.invokeNoArg(new ThingImpl(), "createChild");
     assertTrue(child instanceof Thing);
     assertSame(Reflect.NOT_FOUND, Reflect.invokeNoArg(new ThingImpl(), "createNothing"));
+  }
+
+  @Test
+  void resolvedReferenceBeatsStringOverload() throws Exception {
+    ThingImpl other = new ThingImpl();
+    ThingImpl t = new ThingImpl();
+    Reflect.trySet(t, "label", "Color", name -> "Color".equals(name) ? other : null);
+    assertSame(other, t.label);
+    Reflect.trySet(t, "label", "plain", name -> null);
+    assertEquals("plain", t.label);
   }
 }

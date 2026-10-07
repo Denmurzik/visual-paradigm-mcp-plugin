@@ -7,11 +7,14 @@ import com.vp.plugin.diagram.IConnectorUIModel;
 import com.vp.plugin.diagram.IDiagramElement;
 import com.vp.plugin.diagram.IDiagramUIModel;
 import com.vp.plugin.diagram.IShapeUIModel;
+import com.vp.plugin.model.IAssociationEnd;
+import com.vp.plugin.model.IAttribute;
 import com.vp.plugin.model.IDBColumn;
 import com.vp.plugin.model.IEndRelationship;
 import com.vp.plugin.model.IMessage;
 import com.vp.plugin.model.IModelElement;
 import com.vp.plugin.model.IProject;
+import com.vp.plugin.model.IQualifier;
 import com.vp.plugin.model.IRelationship;
 import com.vp.plugin.model.IRelationshipEnd;
 import com.vp.plugin.model.IStepContainer;
@@ -72,15 +75,112 @@ final class VpModel {
       return m;
     }
     IDiagramElement de = p.getDiagramElementById(id);
-    return de == null ? null : de.getModelElement();
+    if (de != null) {
+      return de.getModelElement();
+    }
+    return nestedById(id);
   }
 
+  /**
+   * Members such as attributes, operations, parameters and literals are not found by
+   * IProject.getModelElementById; they are searched among the children of all elements.
+   */
+  private static IModelElement nestedById(String id) {
+    java.util.Iterator<?> it = project().allLevelModelElementIterator();
+    while (it.hasNext()) {
+      IModelElement found = childById((IModelElement) it.next(), id, 0);
+      if (found != null) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private static IModelElement childById(IModelElement parent, String id, int depth) {
+    if (depth > 4) {
+      return null;
+    }
+    IModelElement[] kids = parent.toChildArray();
+    if (kids == null) {
+      return null;
+    }
+    for (IModelElement k : kids) {
+      if (id.equals(k.getId())) {
+        return k;
+      }
+      IModelElement deeper = childById(k, id, depth + 1);
+      if (deeper != null) {
+        return deeper;
+      }
+    }
+    return null;
+  }
+
+  /** Model element by id (or shape id), else by its exact name if that is unique. */
   static IModelElement model(String id) {
     IModelElement m = findModel(id);
-    if (m == null) {
-      throw new ToolException("No model element with id '" + id + "'");
+    if (m != null) {
+      return m;
     }
-    return m;
+    List<IModelElement> named = byName(id, null);
+    if (named.size() == 1) {
+      return named.get(0);
+    }
+    if (named.size() > 1) {
+      StringBuilder ids = new StringBuilder();
+      for (IModelElement n : named) {
+        ids.append(' ').append(n.getModelType()).append(':').append(n.getId());
+      }
+      throw new ToolException("Name '" + id + "' is ambiguous, use an id:" + ids);
+    }
+    throw new ToolException("No model element with id or name '" + id + "'");
+  }
+
+  /** All elements with this exact name, optionally only of one model type. */
+  static List<IModelElement> byName(String name, String type) {
+    List<IModelElement> out = new ArrayList<>();
+    if (name == null || name.isEmpty()) {
+      return out;
+    }
+    java.util.Iterator<?> it =
+        type == null
+            ? project().allLevelModelElementIterator()
+            : project().allLevelModelElementIterator(type);
+    while (it.hasNext()) {
+      IModelElement e = (IModelElement) it.next();
+      if (name.equals(e.getName())) {
+        out.add(e);
+      }
+    }
+    return out;
+  }
+
+  /** Keys of the vp_build_diagram call in progress ("@key" references in property values). */
+  static final ThreadLocal<Map<String, IModelElement>> BATCH_KEYS = new ThreadLocal<>();
+
+  /**
+   * Resolves a string property value to a model element: "@key" of the current batch, an element
+   * id, or the name of a unique class (so that "type": "Color" links the class Color).
+   */
+  static Object resolveValue(String s) {
+    if (s.startsWith("@") && s.length() > 1) {
+      Map<String, IModelElement> keys = BATCH_KEYS.get();
+      IModelElement k = keys == null ? null : keys.get(s.substring(1));
+      if (k == null) {
+        throw new ToolException(
+            "Unknown key '"
+                + s
+                + "' (keys work inside one vp_build_diagram call and must be"
+                + " defined by an earlier element)");
+      }
+      return k;
+    }
+    IModelElement m = findModel(s);
+    if (m != null) {
+      return m;
+    }
+    List<IModelElement> classes = byName(s, "Class");
+    return classes.size() == 1 ? classes.get(0) : null;
   }
 
   /** Diagram by id, or by exact (then case-insensitive) name. */
@@ -483,8 +583,24 @@ final class VpModel {
 
   // ---------------------------------------------------------------- mutate
 
+  // UML types that VP models as a Class with a stereotype (they are not separate model types)
+  private static final Map<String, String> STEREOTYPED_CLASSES = new LinkedHashMap<>();
+
+  static {
+    STEREOTYPED_CLASSES.put("Interface", "Interface");
+    STEREOTYPED_CLASSES.put("Enumeration", "enumeration");
+    STEREOTYPED_CLASSES.put("DataType", "datatype");
+    STEREOTYPED_CLASSES.put("Primitive", "primitive");
+  }
+
   /** Creates a model element of the given VP model type (e.g. "UseCase"). */
   static IModelElement create(String modelType) {
+    String stereotype = STEREOTYPED_CLASSES.get(modelType);
+    if (stereotype != null) {
+      IModelElement c = create("Class");
+      c.addStereotype(stereotype);
+      return c;
+    }
     IModelElement m;
     try {
       m = factory().create(modelType);
@@ -529,6 +645,16 @@ final class VpModel {
       m.setDocumentation(value == null ? "" : String.valueOf(value));
       return;
     }
+    if ("removeStereotypes".equals(key) || "removeStereotype".equals(key)) {
+      if (value instanceof List) {
+        for (Object s : (List<?>) value) {
+          m.removeStereotype(String.valueOf(s));
+        }
+      } else if (value != null) {
+        m.removeStereotype(String.valueOf(value));
+      }
+      return;
+    }
     if ("stereotypes".equals(key) || "stereotype".equals(key)) {
       if (value instanceof List) {
         for (Object s : (List<?>) value) {
@@ -552,6 +678,10 @@ final class VpModel {
       setOne(target, key.substring(dot + 1), value);
       return;
     }
+    if ("qualifier".equals(key) && m instanceof IAssociationEnd && value != null) {
+      setQualifier((IAssociationEnd) m, String.valueOf(value));
+      return;
+    }
     if ("kind".equals(key) && m instanceof IMessage) {
       setMessageKind((IMessage) m, String.valueOf(value));
       return;
@@ -563,7 +693,7 @@ final class VpModel {
     if ("aggregationKind".equals(key) && value != null) {
       value = aggregationKind(String.valueOf(value));
     }
-    if (Reflect.trySet(m, key, value, VpModel::findModel)) {
+    if (Reflect.trySet(m, key, value, VpModel::resolveValue)) {
       return;
     }
     IModelProperty p = m.getModelPropertyByName(key);
@@ -576,6 +706,24 @@ final class VpModel {
               + " (see vp_get_element for its properties)");
     }
     setModelProperty(p, value);
+  }
+
+  /** Qualifier of an association end, e.g. "isbn: String" or "row: int, col: int". */
+  static void setQualifier(IAssociationEnd end, String spec) {
+    IQualifier q = factory().createQualifier();
+    for (String part : spec.split(",")) {
+      String p = part.trim();
+      if (p.isEmpty()) {
+        continue;
+      }
+      IAttribute a = q.createAttribute();
+      int colon = p.indexOf(':');
+      a.setName((colon >= 0 ? p.substring(0, colon) : p).trim());
+      if (colon >= 0) {
+        a.setType(p.substring(colon + 1).trim());
+      }
+    }
+    end.setQualifier(q);
   }
 
   /** Message kind: call (default), return (dashed), send/async, create, destroy. */
@@ -635,6 +783,71 @@ final class VpModel {
               + t
               + "' for the project's database (try e.g. integer, varchar, text, date,"
               + " timestamp, boolean, decimal)");
+    }
+  }
+
+  /**
+   * Sets presentation options of a shape or connector, e.g. displayStereotypeIcon=false (class box
+   * with the stereotype text instead of the stereotype's icon), presentationOption, background.
+   */
+  static void applyView(IDiagramElement view, Map<String, Object> props) throws Exception {
+    if (props == null || props.isEmpty()) {
+      return;
+    }
+    List<String> errors = new ArrayList<>();
+    for (Map.Entry<String, Object> e : props.entrySet()) {
+      String key = e.getKey();
+      Object value = e.getValue();
+      try {
+        if ("background".equals(key) || "foreground".equals(key)) {
+          java.awt.Color c = java.awt.Color.decode(String.valueOf(value));
+          if ("background".equals(key)) {
+            view.setBackground(c);
+          } else {
+            view.setForeground(c);
+          }
+          continue;
+        }
+        if (!Reflect.trySet(view, key, value, null)) {
+          errors.add("'" + key + "' is not a view property of " + view.getShapeType());
+        }
+      } catch (Exception ex) {
+        errors.add(key + ": " + ex);
+      }
+    }
+    if ("false".equals(String.valueOf(props.get("displayStereotypeIcon")))) {
+      // entity/boundary/control are drawn as robustness icons by a separate class shape flag
+      for (String flag :
+          new String[] {
+            "displayAsRobustnessAnalysisIcon", "overrideAppearanceWithStereotypeIcon"
+          }) {
+        try {
+          Reflect.trySet(view, flag, Boolean.FALSE, null);
+        } catch (Exception ex) {
+          // not every shape has it
+        }
+      }
+    }
+    if (view instanceof IShapeUIModel
+        && !props.containsKey("width")
+        && !props.containsKey("height")) {
+      IShapeUIModel shape = (IShapeUIModel) view;
+      int w = shape.getWidth();
+      int h = shape.getHeight();
+      try {
+        shape.fitSize(); // a different presentation needs a different size
+      } catch (RuntimeException ex) {
+        // cosmetic
+      }
+      if (shape.getWidth() != w || shape.getHeight() != h) {
+        for (IConnectorUIModel c : Geometry.attached(shape)) {
+          Geometry.reroute(c);
+        }
+      }
+    }
+    view.setRequestResetCaption(true);
+    if (!errors.isEmpty()) {
+      throw new ToolException("Some view properties were not set: " + String.join("; ", errors));
     }
   }
 

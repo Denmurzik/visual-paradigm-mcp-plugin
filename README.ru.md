@@ -53,7 +53,8 @@ Paradigm. Сервер запускается автоматически при 
 | `vp_update_element`, `vp_delete`, `vp_set_bounds` | Переименование, свойства, удаление (из модели или только с диаграммы), перемещение вместе со связями |
 | `vp_set_use_case_details` | Пред- и постусловия, акторы, потоки событий |
 | `vp_cleanup_extension_points` | Удаление точек «ExtensionPoint», которые VP добавляет к каждому Extend |
-| `vp_layout_diagram`, `vp_open_diagram` | Авторазметка (`boundary` для границ системы, `reroute` — перерисовать только связи), показ диаграммы в VP |
+| `vp_layout_diagram`, `vp_open_diagram` | Авторазметка (`layered` для диаграмм классов и ER, `boundary` для границ системы, `reroute` — перерисовать только связи), показ диаграммы в VP |
+| `vp_list_dialogs`, `vp_press_dialog_button` | Просмотр диалогов Visual Paradigm (сохранение, восстановление проекта и т. п.) и ответ на них |
 | `vp_export_diagram_image` | Экспорт в PNG/JPG/SVG/PDF; PNG можно вернуть ИИ, чтобы он посмотрел на результат |
 
 Направление связей всегда задаётся как в UML: потомок → родитель для Generalization,
@@ -63,6 +64,15 @@ Paradigm. Сервер запускается автоматически при 
 Свойства — это любые сеттеры объекта модели Visual Paradigm без префикса `set` (`visibility`,
 `multiplicity`, `abstract`, `primaryKey`, `guard`, ...). Числовые перечисления принимают имена
 констант, префиксы `from.`/`to.` обращаются к концам ассоциации.
+
+Модели классов: `Interface`, `Enumeration` (с литералами `EnumerationLiteral`), `DataType`;
+атрибуты, операции с параметрами, статические и абстрактные члены, начальные значения; роли,
+кратности и навигируемость концов ассоциации, агрегация и композиция, квалификаторы
+(`"to.qualifier": "isbn: String"`), классы-ассоциации; стереотипы у любого элемента
+(`stereotypes`, `removeStereotypes`). Тип может ссылаться на класс по имени, id или `@key` из того
+же вызова `vp_build_diagram`. На элементы можно ссылаться по id или по уникальному имени.
+Параметр `view` меняет вид фигуры, например `{"displayStereotypeIcon": false}` показывает классы
+`«entity»` прямоугольником, а не значком робастности.
 
 #### Планы
 
@@ -139,7 +149,7 @@ Paradigm. Сервер запускается автоматически при 
 
 - **Адрес MCP-сервера:** `http://127.0.0.1:8931/mcp` (Streamable HTTP)
 - **Имя сервера:** `visual-paradigm`
-- **Инструментов:** 22 (см. выше)
+- **Инструментов:** 24 (см. выше)
 
 #### Подключение Claude и других MCP-клиентов
 
@@ -167,7 +177,8 @@ claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mc
 
 Советы: просите ИИ проверять результат через `vp_export_diagram_image`; сохраняйте проект через
 `vp_save_project` (изменения не сохраняются сами); закрывайте диалоги, которые открывает Visual
-Paradigm, — пока открыт модальный диалог, изменения отклоняются с сообщением «busy».
+Paradigm, — пока открыт модальный диалог, изменения отклоняются с сообщением «busy»; ИИ может
+прочитать такой диалог и ответить на него через `vp_list_dialogs` / `vp_press_dialog_button`.
 
 ## Разработка
 
@@ -204,7 +215,7 @@ curl -s -X POST http://127.0.0.1:8931/mcp -H 'Content-Type: application/json' \
 **Журнал MCP-сервера:** ищите в `%APPDATA%\VisualParadigm\vp.log` (Windows) строки,
 начинающиеся с `[vp-mcp]`:
 
-- `MCP server listening on http://127.0.0.1:8931/mcp (22 tools)` — сервер запущен
+- `MCP server listening on http://127.0.0.1:8931/mcp (24 tools)` — сервер запущен
 - `MCP server stopped` — сервер остановлен
 - `MCP server could not start on port ...` — например, порт занят другой программой
 

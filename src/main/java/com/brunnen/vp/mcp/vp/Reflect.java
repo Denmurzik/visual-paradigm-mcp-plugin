@@ -101,6 +101,16 @@ final class Reflect {
     if (value instanceof String && resolver != null) {
       resolved = resolver.apply((String) value);
     }
+    // a value that resolved to an object (an element id/name) wins over the String overload
+    if (resolved != null) {
+      for (Method m : candidates) {
+        Class<?> p = m.getParameterTypes()[0];
+        if (!p.isPrimitive() && p != String.class && p.isInstance(resolved)) {
+          invoke(m, target, resolved);
+          return true;
+        }
+      }
+    }
     // 1st pass: exact-ish matches, 2nd pass: conversions
     for (int pass = 0; pass < 2; pass++) {
       for (Method m : candidates) {

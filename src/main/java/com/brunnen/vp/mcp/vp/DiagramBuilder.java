@@ -44,8 +44,12 @@ final class DiagramBuilder {
   private final List<IDiagramElement> created = new ArrayList<>();
   private int autoPlaced;
 
+  private final Map<String, IModelElement> modelKeys = new HashMap<>();
+  private final List<IShapeUIModel> refit = new ArrayList<>();
+
   DiagramBuilder(IDiagramUIModel diagram) {
     this.diagram = diagram;
+    VpModel.BATCH_KEYS.set(modelKeys);
   }
 
   IDiagramUIModel diagram() {
@@ -237,6 +241,7 @@ final class DiagramBuilder {
           vertical ? 260 * partitions.size() : 900, vertical ? 560 : 180 * partitions.size());
     }
     place(created, spec, lane == null ? parent : null, lane);
+    VpModel.applyView(created, spec.map("view"));
     resetCaption(created);
     this.created.add(created);
     if (!partitions.isEmpty()) {
@@ -266,6 +271,7 @@ final class DiagramBuilder {
         && spec.bool("fitSize", true)
         && !spec.has("width")
         && !spec.has("height")) {
+      refit.add((IShapeUIModel) created);
       try {
         ((IShapeUIModel) created).fitSize();
       } catch (RuntimeException e) {
@@ -274,6 +280,7 @@ final class DiagramBuilder {
     }
     if (spec.has("key")) {
       keys.put(spec.str("key"), created);
+      modelKeys.put(spec.str("key"), model);
     }
     Map<String, Object> r = VpModel.describeView(created);
     if (spec.has("key")) {
@@ -485,6 +492,7 @@ final class DiagramBuilder {
               + " with a "
               + type);
     }
+    VpModel.applyView(created, spec.map("view"));
     resetCaption(created);
     this.created.add(created);
     if (spec.has("key")) {
@@ -566,9 +574,27 @@ final class DiagramBuilder {
    * labels are laid out again once that has happened.
    */
   void finish() {
+    VpModel.BATCH_KEYS.remove();
     List<IDiagramElement> all = new ArrayList<>(created);
+    List<IShapeUIModel> fit = new ArrayList<>(refit);
     SwingUtilities.invokeLater(
         () -> {
+          // VP lays out compartments (members, literals) only after the creating event; size
+          // shapes again now so that classes are neither clipped nor too tall
+          for (IShapeUIModel s : fit) {
+            try {
+              int w = s.getWidth();
+              int h = s.getHeight();
+              s.fitSize();
+              if (s.getWidth() != w || s.getHeight() != h) {
+                for (IConnectorUIModel c : Geometry.attached(s)) {
+                  Geometry.reroute(c);
+                }
+              }
+            } catch (RuntimeException e) {
+              // cosmetic
+            }
+          }
           for (IDiagramElement de : all) {
             resetCaption(de);
           }

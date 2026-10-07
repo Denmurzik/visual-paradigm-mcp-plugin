@@ -54,7 +54,8 @@ class, ER and state machine diagrams are tested.
 | `vp_update_element`, `vp_delete`, `vp_set_bounds` | Rename, set properties, delete (model or view only), move with connectors |
 | `vp_set_use_case_details` | Pre/post conditions, actors, flows of events |
 | `vp_cleanup_extension_points` | Remove the "ExtensionPoint" entries VP adds for every Extend |
-| `vp_layout_diagram`, `vp_open_diagram` | Automatic layout (`boundary` for System boundaries, `reroute` to redraw connectors only), show in VP |
+| `vp_layout_diagram`, `vp_open_diagram` | Automatic layout (`layered` for class/ER diagrams, `boundary` for System boundaries, `reroute` to redraw connectors only), show in VP |
+| `vp_list_dialogs`, `vp_press_dialog_button` | See and answer dialogs Visual Paradigm opens (save changes, project recovery, ...) |
 | `vp_export_diagram_image` | PNG/JPG/SVG/PDF export; PNG can be returned to the AI to look at |
 
 Relationships are always given in UML reading direction (child → parent for
@@ -64,6 +65,15 @@ the plugin converts this to Visual Paradigm's internal direction.
 Properties can be any setter of the Visual Paradigm model object without the `set` prefix
 (`visibility`, `multiplicity`, `abstract`, `primaryKey`, `guard`, ...); int enumerations
 accept their constant names, `from.`/`to.` prefixes address association ends.
+
+Class models: `Interface`, `Enumeration` (with `EnumerationLiteral` children), `DataType`;
+attributes, operations with parameters, static/abstract members, initial values; association
+roles, multiplicities, navigability, aggregation/composition, qualifiers
+(`"to.qualifier": "isbn: String"`), association classes; stereotypes on any element
+(`stereotypes`, `removeStereotypes`). A type can reference a class by name, id or `@key` of the
+same `vp_build_diagram` call. Elements can be referenced by id or by unique name. The `view`
+argument changes the presentation of a shape, e.g. `{"displayStereotypeIcon": false}` shows
+`«entity»` classes as boxes instead of robustness icons.
 
 #### Future MCP Features (Planned)
 
@@ -137,7 +147,7 @@ Once Visual Paradigm is running with the plugin:
 
 - **MCP Server Endpoint**: `http://127.0.0.1:8931/mcp` (Streamable HTTP)
 - **Server Name**: `visual-paradigm`
-- **Available Tools**: 22 tools (see above)
+- **Available Tools**: 24 tools (see above)
 
 #### Connecting with Claude or MCP Clients
 
@@ -165,7 +175,8 @@ session starts, so restart the session after installing or updating the plugin.
 
 Tips for good results: let the AI look at its work with `vp_export_diagram_image`, save with
 `vp_save_project` (changes are not saved automatically), and close dialogs that Visual Paradigm
-opens - while a modal dialog is open, changes are refused with a "busy" message.
+opens - while a modal dialog is open, changes are refused with a "busy" message; the AI can
+read and answer it with `vp_list_dialogs` / `vp_press_dialog_button`.
 
 ## Development
 
@@ -202,7 +213,7 @@ curl -s -X POST http://127.0.0.1:8931/mcp -H 'Content-Type: application/json' \
 **MCP Server Logging**: Check `%APPDATA%\VisualParadigm\vp.log` (Windows) for lines starting
 with `[vp-mcp]`:
 
-- `MCP server listening on http://127.0.0.1:8931/mcp (22 tools)` - successful startup
+- `MCP server listening on http://127.0.0.1:8931/mcp (24 tools)` - successful startup
 - `MCP server stopped` - clean shutdown
 - `MCP server could not start on port ...` - e.g. the port is used by another program
 

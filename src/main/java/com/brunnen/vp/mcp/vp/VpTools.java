@@ -73,13 +73,16 @@ public final class VpTools {
           "Properties: any setter of the VP model object without 'set' (visibility, type,"
               + " multiplicity, abstract, primaryKey, ...) or a property name shown by"
               + " vp_get_element. Int enum setters accept constant names (e.g. 'TYPE_CALL').",
-          "Changes are not saved automatically: call vp_save_project when done.");
+          "Changes are not saved automatically: call vp_save_project when done.",
+          "If a tool says VP is busy, a dialog is open: read it with vp_list_dialogs and answer it"
+              + " with vp_press_dialog_button.");
 
   private VpTools() {}
 
   /** Registers all Visual Paradigm tools. */
   public static ToolRegistry register(ToolRegistry r) {
     registerProject(r);
+    registerDialogs(r);
     registerRead(r);
     registerEdit(r);
     registerDiagramOps(r);
@@ -108,6 +111,7 @@ public final class VpTools {
     try {
       return body.call();
     } finally {
+      VpModel.BATCH_KEYS.remove();
       if (tx != null) {
         tx.endTransaction();
       }
@@ -268,6 +272,27 @@ public final class VpTools {
                     true)));
   }
 
+  // ------------------------------------------------------------- dialogs
+
+  private static void registerDialogs(ToolRegistry r) {
+    r.addReadOnly(
+        "vp_list_dialogs",
+        "Dialogs currently open in Visual Paradigm (title, text, buttons). Use it when a tool"
+            + " reports that VP is busy.",
+        Schema.object(),
+        a -> read(Dialogs::list));
+    r.add(
+        "vp_press_dialog_button",
+        "Answers a Visual Paradigm dialog by pressing one of its buttons (label as listed by"
+            + " vp_list_dialogs) or 'close'. Read the dialog text first and only choose an answer"
+            + " that matches what the user wants (e.g. do not discard unsaved work).",
+        Schema.object()
+            .str("button", "Button label, or 'close' to close the window", true)
+            .integer(
+                "index", "Dialog index from vp_list_dialogs (default: top modal dialog)", false),
+        a -> read(() -> Dialogs.press(a.str("button"), a.intOrNull("index"))));
+  }
+
   // ---------------------------------------------------------------- read
 
   private static void registerRead(ToolRegistry r) {
@@ -377,6 +402,11 @@ public final class VpTools {
         .str("parent", "Container shape (System boundary, swimlane, package, frame...)", false)
         .str("modelId", "Show an existing model element instead of creating a new one", false)
         .obj("properties", "Properties to set, e.g. {\"visibility\":\"public\"}", false)
+        .obj(
+            "view",
+            "Presentation of the shape, e.g. {\"displayStereotypeIcon\":false} or"
+                + " {\"background\":\"#FFE0B2\"}",
+            false)
         .objArray(
             "children",
             "Model children, e.g. [{\"type\":\"Attribute\",\"name\":\"id\","
@@ -482,7 +512,12 @@ public final class VpTools {
             .str("id", "Model element, shape or diagram id", true)
             .str("name", "New name", false)
             .str("documentation", "Description text", false)
-            .obj("properties", "Properties to set (see vp_get_element)", false),
+            .obj("properties", "Properties to set (see vp_get_element)", false)
+            .obj(
+                "view",
+                "Presentation of a shape/connector (id must be a shape or connector id),"
+                    + " e.g. {\"displayStereotypeIcon\":false}",
+                false),
         a ->
             write(
                 () -> {
@@ -496,6 +531,13 @@ public final class VpTools {
                       d.setDocumentation(a.str("documentation"));
                     }
                     return VpModel.describeDiagram(d, false);
+                  }
+                  if (!a.map("view").isEmpty()) {
+                    IDiagramElement view = VpModel.project().getDiagramElementById(id);
+                    if (view == null) {
+                      throw new ToolException("'view' needs a shape or connector id");
+                    }
+                    VpModel.applyView(view, a.map("view"));
                   }
                   IModelElement m = VpModel.model(id);
                   if (a.has("name")) {
@@ -569,7 +611,30 @@ public final class VpTools {
     LAYOUTS.put("route-organic", DiagramManager.LAYOUT_ROUTE_CONNECTORS_ORGANIC);
   }
 
+  /**
+   * VP keeps connector geometry of a diagram that is not open in an editor in a stale state: moving
+   * shapes or routing connectors there leaves lines ending at shape corners. Such a diagram is
+   * opened first and the work runs in the next event, after VP has set it up.
+   */
   private static Object layout(IDiagramUIModel d, String style) {
+    if (d.isOpened()) {
+      return doLayout(d, style);
+    }
+    VpModel.diagrams().openDiagram(d);
+    javax.swing.SwingUtilities.invokeLater(
+        () -> {
+          try {
+            doLayout(d, style);
+          } catch (RuntimeException e) {
+            System.out.println("[vp-mcp] layout failed: " + e);
+          }
+        });
+    Map<String, Object> r = ok("layout", style == null ? "auto" : style);
+    r.put("note", "diagram was opened in VP; layout applied right after");
+    return r;
+  }
+
+  private static Object doLayout(IDiagramUIModel d, String style) {
     DiagramManager dm = VpModel.diagrams();
     String used = style == null ? "auto" : style;
     if ("reroute".equals(used)) {
@@ -578,6 +643,14 @@ public final class VpTools {
         Geometry.reroute(c);
       }
       return ok("layout", used);
+    }
+    if ("layered".equals(used)
+        || ("auto".equals(used)
+            && !Geometry.hasFilledContainers(d)
+            && ("ClassDiagram".equals(d.getType()) || "ERDiagram".equals(d.getType())))) {
+      // VP's own layouts do not reliably move the shapes of class diagrams through the API
+      Geometry.layeredLayout(d);
+      return ok("layout", "layered");
     }
     if ("boundary".equals(used) || ("auto".equals(used) && Geometry.hasFilledContainers(d))) {
       // VP's layout ignores System boundaries (content sticks out, connectors vanish)
@@ -603,6 +676,7 @@ public final class VpTools {
     layoutNames.add("auto");
     layoutNames.add("boundary");
     layoutNames.add("reroute");
+    layoutNames.add("layered");
     layoutNames.addAll(LAYOUTS.keySet());
 
     r.add(
@@ -682,7 +756,8 @@ public final class VpTools {
         "vp_layout_diagram",
         "Automatically arranges a diagram. 'auto' uses 'boundary' when the diagram has a System"
             + " boundary/package with shapes inside (actors left, contained shapes in a grid);"
-            + " otherwise VP's automatic layout. 'reroute' keeps shapes in place and only redraws"
+            + " class/ER diagrams get 'layered' (inheritance top-down); otherwise VP's automatic"
+            + " layout. 'reroute' keeps shapes in place and only redraws"
             + " the connectors.",
         Schema.object()
             .str("diagram", "Diagram id or name", true)
@@ -705,6 +780,11 @@ public final class VpTools {
             write(
                 () -> {
                   IDiagramUIModel d = VpModel.diagram(a.str("diagram"));
+                  if (!d.isOpened()) {
+                    throw new ToolException(
+                        "Open the diagram first (vp_open_diagram): VP does not update connectors"
+                            + " of a diagram that is not open");
+                  }
                   IShapeUIModel s = VpModel.shape(d, a.str("shape"));
                   Geometry.moveShape(
                       s,

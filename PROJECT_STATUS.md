@@ -68,8 +68,27 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
   Extend no longer keeps VP's automatic point; `vp_cleanup_extension_points` removes old ones and
   hides the compartment. Captions of moved shapes (actor names) are moved along.
 
+### v0.3.0: class models, dialogs
+- `Interface`, `Enumeration`, `DataType`, `Primitive` are created as a Class with the matching
+  stereotype (VP has no separate model types for them); `EnumerationLiteral` children work.
+- Qualifiers: `from./to.qualifier: "name: Type, ..."` creates an `IQualifier` with attributes.
+- Association classes: connector `AssociationClass` from the class to the association connector.
+- Property values resolve to model elements by id, `@key` (same build call) or unique class
+  name; `Reflect.trySet` prefers the object overload when a value resolved (`setType`).
+- `VpModel.model()` also accepts unique names; members (attributes, operations...) are found by
+  id through a child search (`getModelElementById` does not find them).
+- `removeStereotypes`; `view` map applies presentation setters on the shape
+  (`displayStereotypeIcon:false` also clears `displayAsRobustnessAnalysisIcon`), then refits.
+- `fitSize()` only requests a size; shapes are refit in `finish()` / before `layered` arranges.
+- Layout `layered` (default `auto` for class/ER diagrams): VP's own layouts called through the
+  API did not move class shapes and broke generalization connectors.
+- VP keeps connector geometry of diagrams that are not open in an editor stale; layout opens
+  the diagram and runs in the next event, `vp_set_bounds` asks to open it first.
+- `vp_list_dialogs` / `vp_press_dialog_button` read and answer VP dialogs (click is deferred).
+- Graceful VP shutdown in the redeploy script avoids the project recovery dialog.
+
 ### Tested
-- `./run test`: 28 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
+- `./run test`: 30 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
   (pre-commit itself is not installed on this machine; its generic checks were done by hand).
 - Manually through MCP in VP CE 18.1: use case (system boundary, include/extend/generalization,
   use case specification), class (members, abstract, stereotype, realization, dependency,

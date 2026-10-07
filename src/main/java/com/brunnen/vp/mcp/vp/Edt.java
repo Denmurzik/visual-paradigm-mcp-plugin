@@ -40,7 +40,7 @@ final class Edt {
           if (exclusive && (running > 0 || modalDialogOpen())) {
             throw new ToolException(
                 "Visual Paradigm is busy: a dialog is open or another change is still running."
-                    + " Close the dialog in VP (or wait) and try again.");
+                    + " See vp_list_dialogs / vp_press_dialog_button, or wait and try again.");
           }
           running++;
           try {

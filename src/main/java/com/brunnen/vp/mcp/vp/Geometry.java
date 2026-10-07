@@ -150,6 +150,10 @@ final class Geometry {
     return e.getX() + e.getWidth() / 2;
   }
 
+  /** Shapes whose size follows their compartments (members, columns, literals). */
+  static final Set<String> FIT_TO_CONTENT =
+      new HashSet<>(Arrays.asList("Class", "InterfaceClass", "Enumeration", "DBTable"));
+
   /** Shapes drawn as ellipses/circles: connectors must end on the curve, not the bounding box. */
   static final Set<String> ELLIPTIC =
       new HashSet<>(
@@ -283,6 +287,174 @@ final class Geometry {
     for (IDiagramElement e : d.toDiagramElementArray()) {
       DiagramBuilder.resetCaption(e);
     }
+  }
+
+  /**
+   * Layered layout for class-like diagrams: parents of Generalization/Realization above their
+   * children, each layer ordered by the position of its parents; shapes without inheritance join
+   * the layer of an associated shape, or a last row. All connectors are re-routed.
+   */
+  static void layeredLayout(IDiagramUIModel d) {
+    // fitSize() only requests a new size; VP computes it after the current event, so the
+    // shapes are arranged (and connectors clipped to their borders) in a following event
+    for (IShapeUIModel s : d.toShapeUIModelArray()) {
+      if (s.getParent() == null && FIT_TO_CONTENT.contains(s.getShapeType())) {
+        try {
+          s.fitSize();
+        } catch (RuntimeException e) {
+          // cosmetic
+        }
+      }
+    }
+    javax.swing.SwingUtilities.invokeLater(
+        () -> {
+          try {
+            arrangeLayered(d);
+          } catch (RuntimeException e) {
+            System.out.println("[vp-mcp] layered layout failed: " + e);
+          }
+        });
+  }
+
+  private static void arrangeLayered(IDiagramUIModel d) {
+    Map<String, IShapeUIModel> nodes = new LinkedHashMap<>();
+    for (IShapeUIModel s : d.toShapeUIModelArray()) {
+      if (s.getParent() == null) {
+        nodes.put(s.getId(), s);
+      }
+    }
+    Map<String, List<String>> parents = new LinkedHashMap<>();
+    Map<String, List<String>> neighbours = new LinkedHashMap<>();
+    for (String id : nodes.keySet()) {
+      parents.put(id, new ArrayList<>());
+      neighbours.put(id, new ArrayList<>());
+    }
+    for (IConnectorUIModel c : d.toConnectorUIModelArray()) {
+      IDiagramElement f = c.getFromShape();
+      IDiagramElement t = c.getToShape();
+      if (f == null
+          || t == null
+          || !nodes.containsKey(f.getId())
+          || !nodes.containsKey(t.getId())
+          || f.getId().equals(t.getId())) {
+        continue;
+      }
+      String type = c.getModelElement() == null ? "" : c.getModelElement().getModelType();
+      if (DiagramBuilder.REVERSED_IN_VP.contains(type)) {
+        parents.get(t.getId()).add(f.getId()); // VP stores from = parent or supplier
+      } else {
+        neighbours.get(f.getId()).add(t.getId());
+        neighbours.get(t.getId()).add(f.getId());
+      }
+    }
+    Map<String, Integer> layer = new LinkedHashMap<>();
+    Set<String> inHierarchy = new HashSet<>();
+    for (Map.Entry<String, List<String>> e : parents.entrySet()) {
+      if (!e.getValue().isEmpty()) {
+        inHierarchy.add(e.getKey());
+        inHierarchy.addAll(e.getValue());
+      }
+    }
+    if (inHierarchy.isEmpty()) {
+      // no inheritance: a square-ish grid in reading order
+      int cols = Math.max(1, (int) Math.ceil(Math.sqrt(nodes.size())));
+      int i = 0;
+      for (String id : sortedByPosition(nodes)) {
+        layer.put(id, i / cols);
+        i++;
+      }
+    } else {
+      for (String id : inHierarchy) {
+        layerOf(id, parents, layer, new HashSet<>());
+      }
+      int maxLayer = 0;
+      for (int l : layer.values()) {
+        maxLayer = Math.max(maxLayer, l);
+      }
+      // shapes outside the hierarchy (enumerations, helpers) go into one row below it, each
+      // under the shapes it is connected to, so their lines do not cut through a layer
+      for (String id : sortedByPosition(nodes)) {
+        if (!layer.containsKey(id)) {
+          layer.put(id, maxLayer + 1);
+        }
+      }
+    }
+    Map<Integer, List<IShapeUIModel>> rows = new java.util.TreeMap<>();
+    for (String id : sortedByPosition(nodes)) {
+      rows.computeIfAbsent(layer.get(id), k -> new ArrayList<>()).add(nodes.get(id));
+    }
+    int margin = 40;
+    int gapX = 110; // room for association labels between neighbours
+    int gapY = 110;
+    int y = margin;
+    Map<String, Integer> centre = new LinkedHashMap<>();
+    for (List<IShapeUIModel> row : rows.values()) {
+      row.sort(
+          Comparator.comparingDouble(
+              s ->
+                  parentCentre(
+                      s, parents.get(s.getId()).isEmpty() ? neighbours : parents, centre)));
+      int x = margin;
+      int rowHeight = 0;
+      for (IShapeUIModel s : row) {
+        moveShape(s, x, y, s.getWidth(), s.getHeight());
+        centre.put(s.getId(), x + s.getWidth() / 2);
+        x += s.getWidth() + gapX;
+        rowHeight = Math.max(rowHeight, s.getHeight());
+      }
+      y += rowHeight + gapY;
+    }
+    for (IConnectorUIModel c : d.toConnectorUIModelArray()) {
+      reroute(c);
+    }
+    for (IDiagramElement e : d.toDiagramElementArray()) {
+      DiagramBuilder.resetCaption(e);
+    }
+  }
+
+  /** Average x centre of the already placed parents, else the shape's current x. */
+  private static double parentCentre(
+      IShapeUIModel s, Map<String, List<String>> parents, Map<String, Integer> centre) {
+    double sum = 0;
+    int n = 0;
+    for (String p : parents.get(s.getId())) {
+      Integer c = centre.get(p);
+      if (c != null) {
+        sum += c;
+        n++;
+      }
+    }
+    return n == 0 ? s.getX() : sum / n;
+  }
+
+  private static int layerOf(
+      String id, Map<String, List<String>> parents, Map<String, Integer> layer, Set<String> path) {
+    Integer known = layer.get(id);
+    if (known != null) {
+      return known;
+    }
+    if (!path.add(id)) {
+      return 0; // inheritance cycle
+    }
+    int l = 0;
+    for (String p : parents.get(id)) {
+      l = Math.max(l, layerOf(p, parents, layer, path) + 1);
+    }
+    path.remove(id);
+    layer.put(id, l);
+    return l;
+  }
+
+  private static List<String> sortedByPosition(Map<String, IShapeUIModel> nodes) {
+    List<IShapeUIModel> list = new ArrayList<>(nodes.values());
+    list.sort(
+        Comparator.<IShapeUIModel>comparingInt(IShapeUIModel::getY)
+            .thenComparingInt(IShapeUIModel::getX));
+    List<String> ids = new ArrayList<>();
+    for (IShapeUIModel s : list) {
+      ids.add(s.getId());
+    }
+    return ids;
   }
 
   /**
