@@ -520,6 +520,14 @@ final class VpModel {
       if (to != null) {
         r.put("toShapeId", to.getId());
       }
+      java.awt.Point[] pts = c.getPoints();
+      if (pts != null && pts.length > 0) {
+        List<Object> pl = new ArrayList<>();
+        for (java.awt.Point p : pts) {
+          pl.add(java.util.Arrays.asList(p.x, p.y));
+        }
+        r.put("points", pl);
+      }
     } else {
       r.put("x", de.getX());
       r.put("y", de.getY());
@@ -849,6 +857,51 @@ final class VpModel {
     if (!errors.isEmpty()) {
       throw new ToolException("Some view properties were not set: " + String.join("; ", errors));
     }
+  }
+
+  /** All presentation properties of a shape/connector (or diagram), as name -> value text. */
+  static Map<String, Object> viewProperties(Object view) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    Object[] props;
+    if (view instanceof IDiagramElement) {
+      props = ((IDiagramElement) view).toDiagramElementPropertyArray();
+    } else if (view instanceof IDiagramUIModel) {
+      props = ((IDiagramUIModel) view).toDiagramPropertyArray();
+    } else {
+      return out;
+    }
+    if (props == null) {
+      return out;
+    }
+    for (Object o : props) {
+      try {
+        String name = (String) Reflect.invokeNoArg(o, "getName");
+        Object value = Reflect.invokeNoArg(o, "getValue");
+        if (value instanceof IModelElement) {
+          value = brief((IModelElement) value);
+        } else if (value instanceof IDiagramElement) {
+          value = ((IDiagramElement) value).getId();
+        } else if (value instanceof Object[]) {
+          List<Object> list = new ArrayList<>();
+          for (Object x : (Object[]) value) {
+            list.add(
+                x instanceof IDiagramElement
+                    ? ((IDiagramElement) x).getId()
+                    : x instanceof IModelElement ? brief((IModelElement) x) : String.valueOf(x));
+          }
+          value = list;
+        } else if (value != null
+            && !(value instanceof Number)
+            && !(value instanceof Boolean)
+            && !(value instanceof String)) {
+          value = truncate(String.valueOf(value));
+        }
+        out.put(name, value);
+      } catch (Exception e) {
+        // skip unreadable property
+      }
+    }
+    return out;
   }
 
   /** Accepts UML spellings (composite, shared, ...) for VP's aggregation kind values. */

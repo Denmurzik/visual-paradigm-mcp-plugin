@@ -582,6 +582,10 @@ final class DiagramBuilder {
           // VP lays out compartments (members, literals) only after the creating event; size
           // shapes again now so that classes are neither clipped nor too tall
           for (IShapeUIModel s : fit) {
+            String t = s.getShapeType();
+            if ("InteractionLifeLine".equals(t) || "InteractionActor".equals(t)) {
+              continue; // their length is set by the builder; fitSize() would reset it
+            }
             try {
               int w = s.getWidth();
               int h = s.getHeight();
@@ -598,6 +602,13 @@ final class DiagramBuilder {
           for (IDiagramElement de : all) {
             resetCaption(de);
           }
+          // VP renumbers sequence messages after that, which moves their labels again
+          SwingUtilities.invokeLater(
+              () -> {
+                for (IDiagramElement de : all) {
+                  resetCaption(de);
+                }
+              });
         });
   }
 
@@ -733,6 +744,17 @@ final class DiagramBuilder {
     if (w != parent.getWidth() || h != parent.getHeight()) {
       parent.setSize(w, h);
     }
+  }
+
+  /** Includes an element created outside this builder in the deferred caption pass. */
+  void track(IDiagramElement view) {
+    created.add(view);
+  }
+
+  /** Registers an element created outside this builder under a key. */
+  void register(String key, IDiagramElement view, IModelElement model) {
+    keys.put(key, view);
+    modelKeys.put(key, model);
   }
 
   Map<String, Object> keyMap() {

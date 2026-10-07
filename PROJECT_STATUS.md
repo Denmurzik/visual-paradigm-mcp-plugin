@@ -87,6 +87,24 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
 - `vp_list_dialogs` / `vp_press_dialog_button` read and answer VP dialogs (click is deferred).
 - Graceful VP shutdown in the redeploy script avoids the project recovery dialog.
 
+### v0.4.0: sequence diagrams
+- `vp_build_sequence` (`SequenceBuilder`): plans rows, activation bars (from call/return pairs;
+  short bars for self calls, creation and async calls; none for actors), fragment/operand
+  bounds (nested fragments supported) and refs, then creates everything. Lifelines get a
+  classifier (`baseClassifier`), created objects start at the create message, destroyed ones
+  end with an X (`stopped`).
+- Message source ends are attached to the lifeline shape: a source end attached to an
+  activation shape is stored relative to it after reopening the project (lines start at the
+  diagram corner in the editor, exports looked fine). Target ends on activations are fine.
+- Operands: `ICombinedFragment.createInteractionOperand()` + `addOperand()`, operand shapes as
+  children of the fragment shape; VP draws the dashed separators (sometimes only after a
+  repaint/reopen, not in an export made right away).
+- `showDiagramFrame` has no effect through the API; the `sd` frame is an `IFrame` shape.
+- `IInteractionOccurrence` shows the name of the frame it refers to (`setRefersTo`).
+- Sequence numbers: `IInteractionDiagramUIModel.setShowSequenceNumbers`; VP renumbers after the
+  build event, so captions are reset in a second deferred pass.
+- `vp_get_view` lists presentation properties; `vp_update_element` accepts `view` for diagrams.
+
 ### Tested
 - `./run test`: 30 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
   (pre-commit itself is not installed on this machine; its generic checks were done by hand).

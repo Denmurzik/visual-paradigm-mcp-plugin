@@ -57,7 +57,8 @@ public final class VpTools {
               + " ActivitySwimlane2, partitions: [{key, name}, ...], orientation?: vertical|"
               + "horizontal}; put nodes into a lane with parent = partition key (or, later, the"
               + " partition name/id).",
-          "- Sequence: InteractionActor, InteractionLifeLine, CombinedFragment; connector"
+          "- Sequence: prefer vp_build_sequence (activations, fragments, refs in one call);"
+              + " otherwise InteractionActor, InteractionLifeLine; connector"
               + " Message (ordered top-down by creation; property kind: call|return|send|"
               + "create|destroy).",
           "- Class: Class, Interface (use stereotype), Package, Enumeration; members via"
@@ -372,6 +373,27 @@ public final class VpTools {
         a -> read(() -> VpModel.describeModel(VpModel.model(a.str("id")), true)));
 
     r.addReadOnly(
+        "vp_get_view",
+        "Presentation properties of a shape, connector or diagram (the keys usable in 'view').",
+        Schema.object().str("id", "Shape, connector or diagram id", true),
+        a ->
+            read(
+                () -> {
+                  String id = a.str("id");
+                  IDiagramUIModel d = VpModel.project().getDiagramById(id);
+                  if (d != null) {
+                    return VpModel.viewProperties(d);
+                  }
+                  IDiagramElement de = VpModel.project().getDiagramElementById(id);
+                  if (de == null) {
+                    throw new ToolException("No shape, connector or diagram with id '" + id + "'");
+                  }
+                  Map<String, Object> m = VpModel.describeView(de);
+                  m.put("properties", VpModel.viewProperties(de));
+                  return m;
+                }));
+
+    r.addReadOnly(
         "vp_list_types",
         "Shape types that may be placed on the given diagram (use them as 'type').",
         Schema.object().str("diagram", "Diagram id or name", true),
@@ -529,6 +551,12 @@ public final class VpTools {
                     }
                     if (a.has("documentation")) {
                       d.setDocumentation(a.str("documentation"));
+                    }
+                    for (Map.Entry<String, Object> e : a.map("view").entrySet()) {
+                      if (!Reflect.trySet(d, e.getKey(), e.getValue(), null)) {
+                        throw new ToolException(
+                            "'" + e.getKey() + "' is not an option of a " + d.getType());
+                      }
                     }
                     return VpModel.describeDiagram(d, false);
                   }
@@ -750,6 +778,38 @@ public final class VpTools {
                     res.put("errors", errors);
                   }
                   return res;
+                }));
+
+    r.add(
+        "vp_build_sequence",
+        "Creates a complete sequence diagram: participants left to right and steps top to"
+            + " bottom. Activation bars are derived from call/return pairs. Participant: {key,"
+            + " name, kind: lifeline|actor, classifier?: class name/id/@key}. Step: a message"
+            + " {from, to, name, kind: call|return|async|create|destroy, properties?} (from=to"
+            + " for a self call), a combined fragment {fragment: alt|opt|loop|par|break|critical|"
+            + "neg|strict|seq|ignore|consider|assert, operands: [{guard, steps}]} (or guard+steps"
+            + " for a single operand), or an interaction use {ref: name, covers?: [keys]}.",
+        Schema.object()
+            .str("name", "Name of the new sequence diagram", true)
+            .objArray("participants", "Lifelines and actors, left to right", true)
+            .objArray("steps", "Messages, fragments and refs in order", true)
+            .bool("activations", "Draw activation bars (default true)", false)
+            .bool("sequenceNumbers", "Number the messages 1, 2, 3... (default false)", false)
+            .bool(
+                "frame", "Draw an 'sd <name>' frame around the interaction (default false)", false),
+        a ->
+            write(
+                () -> {
+                  IDiagramUIModel d = VpModel.diagrams().createDiagram("InteractionDiagram");
+                  d.setName(a.str("name"));
+                  VpModel.diagrams().openDiagram(d);
+                  SequenceBuilder sb = new SequenceBuilder(d);
+                  return sb.build(
+                      a.list("participants"),
+                      a.list("steps"),
+                      a.bool("activations", true),
+                      a.bool("sequenceNumbers", false),
+                      a.bool("frame", false));
                 }));
 
     r.add(

@@ -48,8 +48,10 @@ class, ER and state machine diagrams are tested.
 | `vp_list_diagrams`, `vp_get_diagram` | Diagrams and their shapes/connectors |
 | `vp_find_elements`, `vp_get_element` | Search the model, read properties, relationships, flows of events |
 | `vp_list_types` | Shape types a diagram accepts |
+| `vp_get_view` | Presentation properties of a shape, connector or diagram (keys for `view`) |
 | `vp_create_diagram` | Create any diagram type |
 | `vp_build_diagram` | Many shapes and connectors in one call, referenced by own keys |
+| `vp_build_sequence` | Complete sequence diagram from participants and steps: activation bars, create/destroy, self calls, async and reply messages, combined fragments (alt, opt, loop, par, break, ...) with guards, interaction uses (ref), `sd` frame |
 | `vp_add_shape`, `vp_add_connector`, `vp_add_child` | Single elements, relationships, members (attributes, operations, columns, ...) |
 | `vp_update_element`, `vp_delete`, `vp_set_bounds` | Rename, set properties, delete (model or view only), move with connectors |
 | `vp_set_use_case_details` | Pre/post conditions, actors, flows of events |
@@ -147,7 +149,7 @@ Once Visual Paradigm is running with the plugin:
 
 - **MCP Server Endpoint**: `http://127.0.0.1:8931/mcp` (Streamable HTTP)
 - **Server Name**: `visual-paradigm`
-- **Available Tools**: 24 tools (see above)
+- **Available Tools**: 26 tools (see above)
 
 #### Connecting with Claude or MCP Clients
 
@@ -213,7 +215,7 @@ curl -s -X POST http://127.0.0.1:8931/mcp -H 'Content-Type: application/json' \
 **MCP Server Logging**: Check `%APPDATA%\VisualParadigm\vp.log` (Windows) for lines starting
 with `[vp-mcp]`:
 
-- `MCP server listening on http://127.0.0.1:8931/mcp (24 tools)` - successful startup
+- `MCP server listening on http://127.0.0.1:8931/mcp (26 tools)` - successful startup
 - `MCP server stopped` - clean shutdown
 - `MCP server could not start on port ...` - e.g. the port is used by another program
 
