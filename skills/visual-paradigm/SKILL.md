@@ -11,6 +11,25 @@ description: >
 
 # Modelling in Visual Paradigm via MCP
 
+## Prerequisites / Setup
+
+This skill needs the **visual-paradigm MCP server** (tools named `vp_*`). If those tools are not
+available, do not improvise: tell the user to set it up first and point to
+https://github.com/Denmurzik/visual-paradigm-mcp-plugin.
+
+1. Visual Paradigm 18.1+ (the free Community Edition works) with the plugin from the
+   repository's Releases: **Help > Install Plugin > Install from a folder of plugin**, restart VP.
+2. Register the server `http://127.0.0.1:8931/mcp` (Streamable HTTP; only reachable while VP runs):
+   - Claude Code: `claude mcp add --transport http -s user visual-paradigm http://127.0.0.1:8931/mcp`
+   - Codex CLI: `codex mcp add visual-paradigm --url http://127.0.0.1:8931/mcp`
+   - OpenCode: `opencode mcp add visual-paradigm --url http://127.0.0.1:8931/mcp`
+   - Antigravity CLI: `agy mcp add visual-paradigm http://127.0.0.1:8931/mcp`
+   - Gemini CLI: `gemini mcp add -s user --transport http visual-paradigm http://127.0.0.1:8931/mcp`
+   - Cursor (`~/.cursor/mcp.json`): `{"mcpServers": {"visual-paradigm": {"url": "http://127.0.0.1:8931/mcp"}}}`
+   - VS Code / GitHub Copilot (`mcp.json`): `{"servers": {"visual-paradigm": {"type": "http", "url": "http://127.0.0.1:8931/mcp"}}}`
+   - Cline: `{"mcpServers": {"visual-paradigm": {"type": "streamableHttp", "url": "http://127.0.0.1:8931/mcp"}}}`
+3. Restart the agent session so it loads the tools.
+
 The visual-paradigm MCP server is a plugin running inside the user's Visual Paradigm (VP). Every
 call changes the live model the user sees, so work like a careful colleague at their screen:
 look before you change, build in few large steps, check the picture, save on purpose.

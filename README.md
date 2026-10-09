@@ -184,21 +184,20 @@ Visual Paradigm must be running with the plugin; the server lives at
 | OpenCode | `opencode mcp add visual-paradigm --url http://127.0.0.1:8931/mcp` |
 | Antigravity CLI (`agy`) | `agy mcp add visual-paradigm http://127.0.0.1:8931/mcp` |
 
-Check: `claude mcp list`, `codex mcp list`, `opencode mcp list` or `agy mcp list`. All four were
-tested with this server (Claude Code, Codex CLI 0.160, OpenCode 1.18, Antigravity CLI 1.2).
+Check: `claude mcp list`, `codex mcp list`, `opencode mcp list` or `agy mcp list`. These four
+were tested with this server (Claude Code, Codex CLI 0.160, OpenCode 1.18, Antigravity CLI 1.2).
 
-Other clients use the usual JSON configuration:
+Other agents, configured as described in their official documentation (not tested here):
 
-```json
-{
-  "mcpServers": {
-    "visual-paradigm": {
-      "type": "http",
-      "url": "http://127.0.0.1:8931/mcp"
-    }
-  }
-}
-```
+| Client | Configuration |
+| --- | --- |
+| Gemini CLI | `gemini mcp add -s user --transport http visual-paradigm http://127.0.0.1:8931/mcp` |
+| Cursor | `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project): `{"mcpServers": {"visual-paradigm": {"url": "http://127.0.0.1:8931/mcp"}}}` |
+| VS Code / GitHub Copilot | `.vscode/mcp.json`, or the user file via **MCP: Open User Configuration**: `{"servers": {"visual-paradigm": {"type": "http", "url": "http://127.0.0.1:8931/mcp"}}}` |
+| Cline | `cline mcp add visual-paradigm http://127.0.0.1:8931/mcp --transport http`, or in `cline_mcp_settings.json`: `{"mcpServers": {"visual-paradigm": {"type": "streamableHttp", "url": "http://127.0.0.1:8931/mcp"}}}` |
+
+Any other client that supports remote (Streamable HTTP) MCP servers works with the same URL;
+the JSON keys differ per client, see its documentation.
 
 Clients load the tool list when a session starts: restart the session after installing or
 updating the plugin. The server only exists while Visual Paradigm is running.
@@ -209,7 +208,8 @@ The MCP server tells the model what each tool does; the **`visual-paradigm` skil
 [`skills/visual-paradigm`](skills/visual-paradigm) adds how to work with it well: which tool to
 use for which diagram, UML direction conventions, checking the result as an image, saving,
 answering Visual Paradigm dialogs, and tested examples for every diagram type. Install it next to
-the MCP server - the folder works unchanged in all four clients:
+the MCP server. It is a standard Agent Skill (a folder with `SKILL.md`), so the same folder works
+in every client that supports skills:
 
 | Client | Copy `skills/visual-paradigm` to |
 | --- | --- |
@@ -217,6 +217,11 @@ the MCP server - the folder works unchanged in all four clients:
 | Codex CLI | `~/.codex/skills/visual-paradigm` |
 | OpenCode | `~/.config/opencode/skills/visual-paradigm` |
 | Antigravity CLI | `~/.gemini/antigravity/skills/visual-paradigm` (or `.agent/skills/` in a workspace) |
+| Gemini CLI | `gemini skills install <path to the visual-paradigm folder>` |
+| Cursor | `~/.cursor/skills/visual-paradigm` or `~/.agents/skills/visual-paradigm` (Cursor also reads `~/.claude/skills` and `~/.codex/skills`) |
+| VS Code / GitHub Copilot | `~/.copilot/skills/visual-paradigm` or `~/.agents/skills/visual-paradigm` (also reads `~/.claude/skills`; in a repository `.github/skills/`) |
+
+The skill folders for Gemini CLI, Cursor and VS Code are taken from their official documentation.
 
 Commands (from a clone of this repository, or after unpacking `visual-paradigm-skill.zip` from the
 release - then use `visual-paradigm` instead of `skills/visual-paradigm`):
