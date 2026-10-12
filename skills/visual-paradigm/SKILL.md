@@ -43,7 +43,9 @@ look before you change, build in few large steps, check the picture, save on pur
 2. `vp_list_diagrams` / `vp_find_elements` - reuse what exists. Elements are shared across
    diagrams: an actor or class that already exists should be shown again (`modelId`), not
    duplicated. VP refuses duplicate names in one namespace; the tools then reuse the existing
-   element and report `reused: true`.
+   element and report `reused: true`. Relationships work the same way: an Association, Include,
+   Extend, Generalization... that already exists between the two elements is shown, not copied
+   (`allowDuplicate: true` only when a second, distinct relationship is really wanted).
 
 ## Pick the right tool
 
@@ -53,7 +55,7 @@ look before you change, build in few large steps, check the picture, save on pur
 | Any other new diagram | `vp_build_diagram` with all elements and connectors in one call (keys link them) |
 | Add to an existing diagram | `vp_add_shape`, `vp_add_connector`, `vp_add_child` (members), or `vp_build_diagram` with `diagram` |
 | Change / delete | `vp_update_element` (name, documentation, properties, `view`), `vp_delete` (`viewOnly` keeps the model) |
-| Use case specification | `vp_set_use_case_details` (pre/post conditions, actors, flows of events) |
+| Use case specification | `vp_set_use_case_details` (pre/post conditions, actors - `replaceActors: true` to set the exact lists, flows of events; steps may have sub-steps `{text, steps}`) |
 | Arrange | `vp_layout_diagram` (`auto` picks `boundary` for System boundaries, `layered` for class/ER diagrams) |
 | Look at the result | `vp_export_diagram_image` without `path` returns the PNG to you |
 

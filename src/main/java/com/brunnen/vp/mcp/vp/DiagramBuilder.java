@@ -17,6 +17,7 @@ import com.vp.plugin.model.IExtensionPoint;
 import com.vp.plugin.model.IMessage;
 import com.vp.plugin.model.IModelElement;
 import com.vp.plugin.model.IRelationship;
+import com.vp.plugin.model.IRelationshipEnd;
 import java.awt.Point;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -233,6 +234,18 @@ final class DiagramBuilder {
               + diagram.getType()
               + " (see vp_list_types for allowed shape types)");
     }
+    if (created.getWidth() <= 0 || created.getHeight() <= 0) {
+      // a re-shown element gets its size only later; take it from another view meanwhile
+      IDiagramElement[] views = model.getDiagramElements();
+      if (views != null) {
+        for (IDiagramElement v : views) {
+          if (!v.getId().equals(created.getId()) && v.getWidth() > 0 && v.getHeight() > 0) {
+            created.setSize(v.getWidth(), v.getHeight());
+            break;
+          }
+        }
+      }
+    }
     if (parent != null && created instanceof IShapeUIModel) {
       parent.addChild((IShapeUIModel) created);
     }
@@ -438,8 +451,24 @@ final class DiagramBuilder {
 
     IModelElement rel = null;
     boolean existing = spec.has("modelId");
+    boolean reusedRel = false;
+    if (!existing && DEDUPLICATED.contains(type) && !spec.bool("allowDuplicate", false)) {
+      // the same relationship between the same elements usually exists already (drawn on
+      // another diagram); show it instead of creating a duplicate in the model
+      IModelElement same = findRelationship(type, fromModel, toModel, spec.str("name", null));
+      if (same == null && "Association".equals(type)) {
+        same = findRelationship(type, toModel, fromModel, spec.str("name", null));
+      }
+      if (same != null) {
+        rel = same;
+        existing = true;
+        reusedRel = true;
+      }
+    }
     if (existing) {
-      rel = VpModel.model(spec.str("modelId"));
+      if (rel == null) {
+        rel = VpModel.model(spec.str("modelId"));
+      }
       if (rel instanceof IRelationship) {
         // view ends must match VP's own from/to of the relationship, whatever order was given
         IModelElement vpFrom = ((IRelationship) rel).getFrom();
@@ -456,6 +485,20 @@ final class DiagramBuilder {
         rel = null;
       }
     }
+    if (reusedRel) {
+      IDiagramElement shown = viewOn(rel);
+      if (shown != null) { // already on this diagram: nothing to draw
+        if (spec.has("key")) {
+          keys.put(spec.str("key"), shown);
+        }
+        Map<String, Object> r = VpModel.describeView(shown);
+        r.put("reused", true);
+        if (spec.has("key")) {
+          r.put("key", spec.str("key"));
+        }
+        return r;
+      }
+    }
     IDiagramElement created;
     if (rel != null) {
       if (rel instanceof IRelationship && !existing) {
@@ -467,6 +510,13 @@ final class DiagramBuilder {
       }
       Map<String, Object> props = new LinkedHashMap<>(spec.map("properties"));
       props.remove("extensionPoint");
+      if (reusedRel
+          && rel instanceof IRelationship
+          && ((IRelationship) rel).getFrom() != null
+          && fromModel != null
+          && !((IRelationship) rel).getFrom().getId().equals(fromModel.getId())) {
+        props = swapEnds(props); // the existing association runs the other way
+      }
       VpModel.apply(rel, props);
       Point[] points = null;
       if (rel instanceof IMessage) {
@@ -499,10 +549,108 @@ final class DiagramBuilder {
       keys.put(spec.str("key"), created);
     }
     Map<String, Object> r = VpModel.describeView(created);
+    if (reusedRel) {
+      r.put("reused", true);
+    }
     if (spec.has("key")) {
       r.put("key", spec.str("key"));
     }
     return r;
+  }
+
+  /** Relationship types that are not duplicated between the same two elements. */
+  static final Set<String> DEDUPLICATED =
+      new HashSet<>(
+          Arrays.asList(
+              "Association",
+              "Include",
+              "Extend",
+              "Generalization",
+              "Realization",
+              "Dependency",
+              "Usage",
+              "Abstraction",
+              "DBForeignKey"));
+
+  /**
+   * Existing relationship of {@code type} whose VP "from" is {@code a} and "to" is {@code b}, with
+   * the same name (no name matches an unnamed relationship).
+   */
+  static IModelElement findRelationship(
+      String type, IModelElement a, IModelElement b, String name) {
+    if (a == null || b == null) {
+      return null;
+    }
+    List<IModelElement> candidates = new ArrayList<>();
+    addAll(candidates, a.toFromRelationshipArray());
+    addAll(candidates, a.toToRelationshipArray());
+    for (IRelationshipEnd e : ends(a.toFromRelationshipEndArray(), a.toToRelationshipEndArray())) {
+      if (e.getEndRelationship() != null) {
+        candidates.add(e.getEndRelationship());
+      }
+    }
+    String wanted = name == null ? "" : name;
+    for (IModelElement c : candidates) {
+      if (!(c instanceof IRelationship) || !type.equals(c.getModelType())) {
+        continue;
+      }
+      IRelationship rel = (IRelationship) c;
+      String have = rel.getName() == null ? "" : rel.getName();
+      if (rel.getFrom() != null
+          && rel.getTo() != null
+          && rel.getFrom().getId().equals(a.getId())
+          && rel.getTo().getId().equals(b.getId())
+          && wanted.equals(have)) {
+        return rel;
+      }
+    }
+    return null;
+  }
+
+  private static void addAll(List<IModelElement> out, IModelElement[] arr) {
+    if (arr != null) {
+      out.addAll(Arrays.asList(arr));
+    }
+  }
+
+  private static List<IRelationshipEnd> ends(IRelationshipEnd[] x, IRelationshipEnd[] y) {
+    List<IRelationshipEnd> out = new ArrayList<>();
+    if (x != null) {
+      out.addAll(Arrays.asList(x));
+    }
+    if (y != null) {
+      out.addAll(Arrays.asList(y));
+    }
+    return out;
+  }
+
+  /** The view of a model element on this builder's diagram, or null. */
+  private IDiagramElement viewOn(IModelElement m) {
+    IDiagramElement[] views = m.getDiagramElements();
+    if (views != null) {
+      for (IDiagramElement v : views) {
+        if (v.getDiagramUIModel() != null
+            && diagram.getId().equals(v.getDiagramUIModel().getId())) {
+          return v;
+        }
+      }
+    }
+    return null;
+  }
+
+  /** "from.x" <-> "to.x" for a relationship reused in the opposite direction. */
+  private static Map<String, Object> swapEnds(Map<String, Object> props) {
+    Map<String, Object> out = new LinkedHashMap<>();
+    for (Map.Entry<String, Object> e : props.entrySet()) {
+      String k = e.getKey();
+      if (k.startsWith("from.")) {
+        k = "to." + k.substring(5);
+      } else if (k.startsWith("to.")) {
+        k = "from." + k.substring(3);
+      }
+      out.put(k, e.getValue());
+    }
+    return out;
   }
 
   private Integer nextMessageY;
@@ -607,6 +755,11 @@ final class DiagramBuilder {
               () -> {
                 for (IDiagramElement de : all) {
                   resetCaption(de);
+                }
+                for (IDiagramElement de : all) {
+                  if (de instanceof IConnectorUIModel) {
+                    Geometry.scheduleCaptionBeside((IConnectorUIModel) de);
+                  }
                 }
               });
         });

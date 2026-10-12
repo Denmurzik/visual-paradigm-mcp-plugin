@@ -17,6 +17,7 @@ import com.vp.plugin.model.IProject;
 import com.vp.plugin.model.IQualifier;
 import com.vp.plugin.model.IRelationship;
 import com.vp.plugin.model.IRelationshipEnd;
+import com.vp.plugin.model.IStep;
 import com.vp.plugin.model.IStepContainer;
 import com.vp.plugin.model.IStereotype;
 import com.vp.plugin.model.IUseCase;
@@ -88,9 +89,70 @@ final class VpModel {
   private static IModelElement nestedById(String id) {
     java.util.Iterator<?> it = project().allLevelModelElementIterator();
     while (it.hasNext()) {
-      IModelElement found = childById((IModelElement) it.next(), id, 0);
+      IModelElement e = (IModelElement) it.next();
+      IModelElement found = childById(e, id, 0);
+      if (found == null && e instanceof IUseCase) {
+        found = flowElementById((IUseCase) e, id);
+      }
       if (found != null) {
         return found;
+      }
+    }
+    return null;
+  }
+
+  /** Steps of a flow of events: the text, or {text, steps} when a step has sub-steps. */
+  static List<Object> steps(IStep[] steps) {
+    List<Object> out = new ArrayList<>();
+    if (steps == null) {
+      return out;
+    }
+    for (IStep st : steps) {
+      IStep[] sub = st.toStepArray();
+      if (sub == null || sub.length == 0) {
+        out.add(st.getName());
+      } else {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("text", st.getName());
+        m.put("steps", steps(sub));
+        out.add(m);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Flows of events (step containers) and their steps are not reachable through the project or the
+   * use case's children; they hang off IUseCase.toStepContainerArray().
+   */
+  private static IModelElement flowElementById(IUseCase uc, String id) {
+    IStepContainer[] containers = uc.toStepContainerArray();
+    if (containers == null) {
+      return null;
+    }
+    for (IStepContainer sc : containers) {
+      if (id.equals(sc.getId())) {
+        return sc;
+      }
+      IModelElement st = stepById(sc.toStepArray(), id);
+      if (st != null) {
+        return st;
+      }
+    }
+    return null;
+  }
+
+  private static IModelElement stepById(IStep[] steps, String id) {
+    if (steps == null) {
+      return null;
+    }
+    for (IStep st : steps) {
+      if (id.equals(st.getId())) {
+        return st;
+      }
+      IModelElement sub = stepById(st.toStepArray(), id);
+      if (sub != null) {
+        return sub;
       }
     }
     return null;
@@ -302,20 +364,18 @@ final class VpModel {
     if (!detail) {
       return r;
     }
+    if (m instanceof IStepContainer) {
+      r.put("steps", steps(((IStepContainer) m).toStepArray()));
+    } else if (m instanceof IStep && ((IStep) m).stepCount() > 0) {
+      r.put("steps", steps(((IStep) m).toStepArray()));
+    }
     if (m instanceof IUseCase) {
       List<Object> flows = new ArrayList<>();
       IStepContainer[] containers = ((IUseCase) m).toStepContainerArray();
       if (containers != null) {
         for (IStepContainer sc : containers) {
           Map<String, Object> f = brief(sc);
-          List<Object> steps = new ArrayList<>();
-          IModelElement[] kids = sc.toChildArray();
-          if (kids != null) {
-            for (IModelElement st : kids) {
-              steps.add(st.getName());
-            }
-          }
-          f.put("steps", steps);
+          f.put("steps", steps(sc.toStepArray()));
           flows.add(f);
         }
       }

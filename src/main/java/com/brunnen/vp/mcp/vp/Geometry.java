@@ -140,6 +140,63 @@ final class Geometry {
     }
     c.setRequestRebuild(true);
     DiagramBuilder.resetCaption(c);
+    scheduleCaptionBeside(c);
+  }
+
+  /** Stereotype labels whose default position on a steep line covers the arrow head. */
+  static final Set<String> SIDE_CAPTION = new HashSet<>(Arrays.asList("Include", "Extend"));
+
+  /**
+   * VP centres an «include»/«extend» label on the line, which on a short, steep line puts it on the
+   * arrow head. After VP has laid the label out (two events later), move it beside the middle of
+   * the line. Other connectors keep VP's placement.
+   */
+  static void scheduleCaptionBeside(IConnectorUIModel c) {
+    if (c.getModelElement() == null || !SIDE_CAPTION.contains(c.getModelElement().getModelType())) {
+      return;
+    }
+    javax.swing.SwingUtilities.invokeLater(
+        () ->
+            javax.swing.SwingUtilities.invokeLater(
+                () -> {
+                  try {
+                    placeCaptionBeside(c);
+                  } catch (RuntimeException e) {
+                    // cosmetic
+                  }
+                }));
+  }
+
+  static void placeCaptionBeside(IConnectorUIModel c) {
+    ICaptionUIModel cap = c.getCaptionUIModel();
+    Point[] p = c.getPoints();
+    if (cap == null || cap.getWidth() <= 0 || p == null || p.length < 2) {
+      return;
+    }
+    int best = 0;
+    double bestLen = -1;
+    for (int i = 0; i + 1 < p.length; i++) {
+      double len = p[i].distance(p[i + 1]);
+      if (len > bestLen) {
+        bestLen = len;
+        best = i;
+      }
+    }
+    Point a = p[best];
+    Point b = p[best + 1];
+    if (Math.abs(b.y - a.y) <= 2 * Math.abs(b.x - a.x)) {
+      return; // not steep: VP's centred label does not cover the arrow
+    }
+    Point at = captionBeside(a, b, cap.getWidth(), cap.getHeight());
+    cap.setX(at.x);
+    cap.setY(at.y);
+  }
+
+  /** Top-left corner for a label of size w x h to the right of the middle of segment a-b. */
+  static Point captionBeside(Point a, Point b, int w, int h) {
+    int mx = (a.x + b.x) / 2;
+    int my = (a.y + b.y) / 2;
+    return new Point(mx + 6, my - h / 2);
   }
 
   static Point center(IDiagramElement e) {

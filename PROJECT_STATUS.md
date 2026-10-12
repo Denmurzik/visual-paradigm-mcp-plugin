@@ -105,8 +105,21 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
   build event, so captions are reset in a second deferred pass.
 - `vp_get_view` lists presentation properties; `vp_update_element` accepts `view` for diagrams.
 
+### v0.4.1: fixes reported by session sa-18
+- Steps of a flow of events live in `IStepContainer.toStepArray()` (not in the children);
+  `vp_get_element` returns them, sub-steps as `{text, steps}`. Flows and steps are found by id
+  through `IUseCase.toStepContainerArray()` (`VpModel.flowElementById`).
+- `vp_set_use_case_details`: `replaceActors` makes the given actor lists complete and ordered
+  (`removePrimaryActor` / `removeSupportingActor`); steps may have sub-steps.
+- Connectors reuse an identical existing relationship (type, VP from/to, name; associations in
+  both directions with from./to. properties swapped) and do not draw a second view on the same
+  diagram; `allowDuplicate` forces a new one (`DiagramBuilder.DEDUPLICATED`).
+- An element shown again via `modelId` takes its size from another view right away.
+- «include»/«extend» labels on steep lines are moved beside the middle of the line two events
+  after VP laid them out (`Geometry.scheduleCaptionBeside`).
+
 ### Tested
-- `./run test`: 30 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
+- `./run test`: 31 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
   (pre-commit itself is not installed on this machine; its generic checks were done by hand).
 - Manually through MCP in VP CE 18.1: use case (system boundary, include/extend/generalization,
   use case specification), class (members, abstract, stereotype, realization, dependency,

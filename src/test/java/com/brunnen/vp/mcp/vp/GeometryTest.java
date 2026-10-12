@@ -33,4 +33,12 @@ class GeometryTest {
     double ny = (p.y - 20) / 20.0;
     assertEquals(1.0, nx * nx + ny * ny, 0.1);
   }
+
+  @Test
+  void captionGoesBesideMiddleOfSteepLine() {
+    // vertical line from (100,100) to (100,160): label 60x14 to the right of y=130
+    assertEquals(
+        new Point(106, 123),
+        Geometry.captionBeside(new Point(100, 100), new Point(100, 160), 60, 14));
+  }
 }

@@ -489,7 +489,9 @@ public final class VpTools {
     r.add(
         "vp_add_connector",
         "Connects two shapes on a diagram with a relationship (Association, Include, Extend,"
-            + " Generalization, ControlFlow, Message, Transition2, DBForeignKey, ...).",
+            + " Generalization, ControlFlow, Message, Transition2, DBForeignKey, ...). If the same"
+            + " relationship (type, ends, name) already exists in the model, it is shown instead"
+            + " of creating a duplicate (reused=true); allowDuplicate=true forces a new one.",
         Schema.object()
             .str("diagram", "Diagram id or name", true)
             .str("type", "Relationship type (not needed with modelId)", false)
@@ -498,6 +500,10 @@ public final class VpTools {
             .str("name", "Label, e.g. a message or guard name", false)
             .integer("y", "Sequence diagrams: vertical position of the message", false)
             .str("modelId", "Show an existing relationship instead of creating a new one", false)
+            .bool(
+                "allowDuplicate",
+                "Create a new relationship even if an identical one already exists",
+                false)
             .str(
                 "extensionPoint",
                 "Extend only: name of the extension point to keep in the base use case"
@@ -716,7 +722,9 @@ public final class VpTools {
             + " (containers before their content). x/y are absolute diagram coordinates, also"
             + " for shapes inside a parent; omit them for automatic placement. An element whose"
             + " name already exists in the same container is reused (VP forbids duplicate"
-            + " names), reported with reused=true. Pass 'diagram' to extend an existing diagram,"
+            + " names), reported with reused=true; the same holds for an identical relationship"
+            + " (connector allowDuplicate=true forces a new one). Pass 'diagram' to extend an"
+            + " existing diagram,"
             + " or diagramType+name to create a new one. Returns the ids for every key.",
         Schema.object()
             .str("diagram", "Existing diagram id or name", false)
@@ -972,14 +980,20 @@ public final class VpTools {
     r.add(
         "vp_set_use_case_details",
         "Fills the use case specification: pre/post conditions, primary/supporting actors and"
-            + " flows of events (each flow is a named list of steps). Existing flows with the"
-            + " same name are replaced.",
+            + " flows of events (each flow is a named list of steps; a step is a text or"
+            + " {text, steps} for sub-steps). Existing flows with the same name are replaced."
+            + " Actors are added to the existing ones unless replaceActors=true, which makes the"
+            + " given lists (also empty ones) the complete actor lists in the given order.",
         Schema.object()
             .str("useCase", "Use case id (or shape id)", true)
             .str("preConditions", "Preconditions", false)
             .str("postConditions", "Postconditions", false)
-            .strArray("primaryActors", "Actor ids", false)
-            .strArray("supportingActors", "Actor ids", false)
+            .strArray("primaryActors", "Actor ids or names", false)
+            .strArray("supportingActors", "Actor ids or names", false)
+            .bool(
+                "replaceActors",
+                "Replace the primary/supporting actor lists that are given instead of adding",
+                false)
             .objArray(
                 "flows",
                 "e.g. [{\"name\":\"Main flow\",\"steps\":[\"User opens ...\",\"System ...\"]}]",
@@ -999,11 +1013,34 @@ public final class VpTools {
                   if (a.has("postConditions")) {
                     uc.setPostConditions(a.str("postConditions"));
                   }
-                  for (Object id : a.list("primaryActors")) {
-                    uc.addPrimaryActor(actor(String.valueOf(id)));
+                  boolean replace = a.bool("replaceActors", false);
+                  List<IActor> primary = actors(a.list("primaryActors"));
+                  List<IActor> supporting = actors(a.list("supportingActors"));
+                  if (replace && a.raw().containsKey("primaryActors")) {
+                    IActor[] old = uc.toPrimaryActorArray();
+                    if (old != null) {
+                      for (IActor x : old) {
+                        uc.removePrimaryActor(x);
+                      }
+                    }
                   }
-                  for (Object id : a.list("supportingActors")) {
-                    uc.addSupportingActor(actor(String.valueOf(id)));
+                  if (replace && a.raw().containsKey("supportingActors")) {
+                    IActor[] old = uc.toSupportingActorArray();
+                    if (old != null) {
+                      for (IActor x : old) {
+                        uc.removeSupportingActor(x);
+                      }
+                    }
+                  }
+                  for (IActor x : primary) {
+                    if (replace || !contains(uc.toPrimaryActorArray(), x)) {
+                      uc.addPrimaryActor(x);
+                    }
+                  }
+                  for (IActor x : supporting) {
+                    if (replace || !contains(uc.toSupportingActorArray(), x)) {
+                      uc.addSupportingActor(x);
+                    }
                   }
                   VpModel.apply(uc, a.map("properties"));
                   List<Object> flows = new ArrayList<>();
@@ -1021,21 +1058,63 @@ public final class VpTools {
                     IStepContainer sc = VpModel.factory().createStepContainer();
                     sc.setName(flowName);
                     uc.addStepContainer(sc);
-                    int n = 0;
-                    for (Object s : flow.list("steps")) {
-                      IStep step = VpModel.factory().createStep();
-                      step.setName(String.valueOf(s));
-                      sc.addStep(step);
-                      n++;
+                    for (Object st : flow.list("steps")) {
+                      sc.addStep(step(st));
                     }
                     Map<String, Object> fr = VpModel.brief(sc);
-                    fr.put("steps", n);
+                    fr.put("steps", VpModel.steps(sc.toStepArray()));
                     flows.add(fr);
                   }
                   Map<String, Object> res = VpModel.describeModel(uc, false);
+                  res.put("primaryActors", briefs(uc.toPrimaryActorArray()));
+                  res.put("supportingActors", briefs(uc.toSupportingActorArray()));
                   res.put("flows", flows);
                   return res;
                 }));
+  }
+
+  /** A step from text or {text, steps}; sub-steps are nested. */
+  private static IStep step(Object spec) {
+    IStep step = VpModel.factory().createStep();
+    if (spec instanceof Map) {
+      Args a = Args.of(spec, "step");
+      step.setName(a.str("text"));
+      for (Object sub : a.list("steps")) {
+        step.addStep(step(sub));
+      }
+    } else {
+      step.setName(String.valueOf(spec));
+    }
+    return step;
+  }
+
+  private static List<IActor> actors(List<Object> refs) {
+    List<IActor> out = new ArrayList<>();
+    for (Object ref : refs) {
+      out.add(actor(String.valueOf(ref)));
+    }
+    return out;
+  }
+
+  private static boolean contains(IActor[] list, IActor x) {
+    if (list != null) {
+      for (IActor y : list) {
+        if (y.getId().equals(x.getId())) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static List<Object> briefs(IModelElement[] list) {
+    List<Object> out = new ArrayList<>();
+    if (list != null) {
+      for (IModelElement e : list) {
+        out.add(VpModel.brief(e));
+      }
+    }
+    return out;
   }
 
   private static IActor actor(String id) {
