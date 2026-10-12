@@ -45,7 +45,9 @@ look before you change, build in few large steps, check the picture, save on pur
    duplicated. VP refuses duplicate names in one namespace; the tools then reuse the existing
    element and report `reused: true`. Relationships work the same way: an Association, Include,
    Extend, Generalization... that already exists between the two elements is shown, not copied
-   (`allowDuplicate: true` only when a second, distinct relationship is really wanted).
+   (for associations only if the role names, multiplicities and aggregation you give match too;
+   `allowDuplicate: true` only when a second, otherwise identical relationship is really wanted).
+   `vp_find_elements` also finds members (attributes, operations, parameters).
 
 ## Pick the right tool
 
@@ -54,7 +56,7 @@ look before you change, build in few large steps, check the picture, save on pur
 | Sequence diagram | `vp_build_sequence` - participants + ordered steps; activation bars, create/destroy, fragments (alt/opt/loop/par/break...), refs and the `sd` frame are generated |
 | Any other new diagram | `vp_build_diagram` with all elements and connectors in one call (keys link them) |
 | Add to an existing diagram | `vp_add_shape`, `vp_add_connector`, `vp_add_child` (members), or `vp_build_diagram` with `diagram` |
-| Change / delete | `vp_update_element` (name, documentation, properties, `view`), `vp_delete` (`viewOnly` keeps the model) |
+| Change / delete | `vp_update_element` (name, documentation, properties, `view`; the project id renames the project), `vp_delete` (`viewOnly` keeps the model) |
 | Use case specification | `vp_set_use_case_details` (pre/post conditions, actors - `replaceActors: true` to set the exact lists, flows of events; steps may have sub-steps `{text, steps}`) |
 | Arrange | `vp_layout_diagram` (`auto` picks `boundary` for System boundaries, `layered` for class/ER diagrams) |
 | Look at the result | `vp_export_diagram_image` without `path` returns the PNG to you |
@@ -104,13 +106,26 @@ the request was cancelled or is still running.
 ## Moving things
 
 `vp_set_bounds` moves nested shapes and re-routes connectors with the shape, but only on a
-diagram that is open in VP (`vp_open_diagram` first). Layouts open a closed diagram themselves.
+diagram that is open in VP (`vp_open_diagram` first). Layouts, builds and image exports open a
+closed diagram themselves.
+
+A second line between the same two shapes (e.g. two associations with different roles) gets a
+bend automatically so that the lines do not cover each other. To route a line yourself pass
+`waypoints: [[x, y], ...]` (absolute bend points; the ends go on the shape borders) to
+`vp_add_connector` / a build connector, or later to `vp_update_element` with the connector id
+(`[]` makes it straight again). Moving a shape or `layout: "reroute"` redraws lines straight.
+
+Classes grow when members are added and may then overlap their neighbours: check the image and
+move them (`vp_set_bounds`) or re-layout.
 
 ## When something looks wrong
 
-- `vp_get_diagram` shows ids, bounds, parents and connector points; `vp_get_element` shows
-  properties, children (attributes, operations...) and relationships.
+- `vp_get_diagram` shows ids, bounds, parents and connector points; with `opened: false` the
+  bounds may be stale (VP unloads closed diagrams), `vp_open_diagram` first when they matter.
+  `vp_get_element` shows properties, children (attributes, operations... with `dataType` /
+  `returnType`), association ends (`fromEnd`/`toEnd`) and relationships.
 - `vp_get_view` lists presentation properties of a shape or diagram (keys usable in `view`).
-- `vp_list_types` lists the shape types a diagram accepts when a type is refused.
+- `vp_list_types` lists the shape types a diagram (or a diagram type such as `ClassDiagram`)
+  accepts when a type is refused.
 - Errors from the tools name the problem (unknown property, ambiguous name, refused connection);
   fix the input instead of repeating the same call.

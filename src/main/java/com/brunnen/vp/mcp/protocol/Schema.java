@@ -62,6 +62,17 @@ public final class Schema {
     return prop(name, p, req);
   }
 
+  /** Array of points, each an array [x, y] of two numbers. */
+  public Schema points(String name, String description, boolean req) {
+    Map<String, Object> p = typed("array", description);
+    Map<String, Object> point = typed("array", null);
+    point.put("items", typed("number", null));
+    point.put("minItems", 2);
+    point.put("maxItems", 2);
+    p.put("items", point);
+    return prop(name, p, req);
+  }
+
   /** Property with an explicit JSON schema. */
   public Schema prop(String name, Map<String, Object> schema, boolean req) {
     properties.put(name, schema);

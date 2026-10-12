@@ -13,6 +13,8 @@ import com.vp.plugin.model.IDBColumn;
 import com.vp.plugin.model.IEndRelationship;
 import com.vp.plugin.model.IMessage;
 import com.vp.plugin.model.IModelElement;
+import com.vp.plugin.model.IOperation;
+import com.vp.plugin.model.IParameter;
 import com.vp.plugin.model.IProject;
 import com.vp.plugin.model.IQualifier;
 import com.vp.plugin.model.IRelationship;
@@ -158,6 +160,34 @@ final class VpModel {
     return null;
   }
 
+  /**
+   * Every model element of the project including members (attributes, operations, parameters,
+   * literals, columns), which the project's all-level iterator leaves out.
+   */
+  static List<IModelElement> allElements() {
+    List<IModelElement> out = new ArrayList<>();
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    java.util.Iterator<?> it = project().allLevelModelElementIterator();
+    while (it.hasNext()) {
+      addWithChildren(out, seen, (IModelElement) it.next(), 0);
+    }
+    return out;
+  }
+
+  private static void addWithChildren(
+      List<IModelElement> out, java.util.Set<String> seen, IModelElement m, int depth) {
+    if (!seen.add(m.getId())) {
+      return;
+    }
+    out.add(m);
+    IModelElement[] kids = depth > 4 ? null : m.toChildArray();
+    if (kids != null) {
+      for (IModelElement k : kids) {
+        addWithChildren(out, seen, k, depth + 1);
+      }
+    }
+  }
+
   private static IModelElement childById(IModelElement parent, String id, int depth) {
     if (depth > 4) {
       return null;
@@ -271,6 +301,74 @@ final class VpModel {
   }
 
   /**
+   * Opens a diagram that is not open in an editor. VP drops the layout state of closed diagrams
+   * ("Garbage collection diagram" in vp.log): their shapes report stale sizes and are exported with
+   * default sizes. Returns true if the diagram was opened now.
+   */
+  static boolean ensureOpen(IDiagramUIModel d) {
+    if (d.isOpened()) {
+      return false;
+    }
+    diagrams().openDiagram(d);
+    // classes of a diagram that VP loads again can come back with the default size 80x40
+    javax.swing.SwingUtilities.invokeLater(
+        () -> {
+          try {
+            Geometry.growToContent(d);
+          } catch (RuntimeException e) {
+            System.out.println("[vp-mcp] fitting shapes after opening failed: " + e);
+          }
+        });
+    return true;
+  }
+
+  /**
+   * After a member (attribute, operation, parameter, literal, column) was added or changed, the
+   * shapes of its owner are fitted to their compartments again: right away on open diagrams, on
+   * closed ones VP does it when the diagram is opened.
+   */
+  static void refitOwnerViews(IModelElement member) {
+    IModelElement owner = member;
+    for (int depth = 0; owner != null && depth < 4; depth++) {
+      IDiagramElement[] views = owner.getDiagramElements();
+      if (views != null && views.length > 0) {
+        for (IDiagramElement v : views) {
+          if (v instanceof IShapeUIModel && Geometry.FIT_TO_CONTENT.contains(v.getShapeType())) {
+            refit((IShapeUIModel) v);
+          }
+        }
+        return;
+      }
+      owner = owner.getParent();
+    }
+  }
+
+  private static void refit(IShapeUIModel s) {
+    s.setRequestFitSize(true);
+    IDiagramUIModel d = s.getDiagramUIModel();
+    if (d == null || !d.isOpened()) {
+      return;
+    }
+    // compartments are laid out after the current event
+    javax.swing.SwingUtilities.invokeLater(
+        () -> {
+          try {
+            int w = s.getWidth();
+            int h = s.getHeight();
+            s.fitSize();
+            if (s.getWidth() != w || s.getHeight() != h) {
+              for (IConnectorUIModel c : Geometry.attached(s)) {
+                Geometry.reroute(c);
+              }
+            }
+            Geometry.keepSizes(d);
+          } catch (RuntimeException e) {
+            // cosmetic
+          }
+        });
+  }
+
+  /**
    * Finds the view of something on a diagram. Accepts a shape/connector id, a model element id (its
    * view on that diagram) or the exact name of an element shown on the diagram.
    */
@@ -361,6 +459,19 @@ final class VpModel {
       r.put("from", brief(rev ? rel.getTo() : rel.getFrom()));
       r.put("to", brief(rev ? rel.getFrom() : rel.getTo()));
     }
+    putIfText(r, "dataType", dataType(m));
+    putIfText(r, "returnType", returnType(m));
+    if (m instanceof IEndRelationship) {
+      IEndRelationship rel = (IEndRelationship) m;
+      Map<String, Object> from = endInfo(rel.getFromEnd());
+      Map<String, Object> to = endInfo(rel.getToEnd());
+      if (!from.isEmpty()) {
+        r.put("fromEnd", from);
+      }
+      if (!to.isEmpty()) {
+        r.put("toEnd", to);
+      }
+    }
     if (!detail) {
       return r;
     }
@@ -431,6 +542,60 @@ final class VpModel {
     }
     if (!views.isEmpty()) {
       r.put("views", views);
+    }
+    return r;
+  }
+
+  /** Type of an attribute, parameter or column as shown in VP, e.g. "String" or "Item[]". */
+  static String dataType(IModelElement m) {
+    if (m instanceof IAttribute) {
+      IAttribute a = (IAttribute) m;
+      return withModifier(a.getTypeAsText(), a.getTypeModifier());
+    }
+    if (m instanceof IParameter) {
+      IParameter p = (IParameter) m;
+      return withModifier(p.getTypeAsText(), p.getTypeModifier());
+    }
+    if (m instanceof IDBColumn) {
+      return ((IDBColumn) m).getTypeInText();
+    }
+    return null;
+  }
+
+  /** Return type of an operation, e.g. "ValidationError[]". */
+  static String returnType(IModelElement m) {
+    if (m instanceof IOperation) {
+      IOperation o = (IOperation) m;
+      return withModifier(o.getReturnTypeAsText(), o.getTypeModifier());
+    }
+    return null;
+  }
+
+  static String withModifier(String type, String modifier) {
+    if (type == null || type.isEmpty()) {
+      return null;
+    }
+    if (modifier == null || modifier.isEmpty() || type.endsWith(modifier)) {
+      return type;
+    }
+    return type + modifier;
+  }
+
+  /** Role name, multiplicity, aggregation and navigability of an association end. */
+  static Map<String, Object> endInfo(IRelationshipEnd end) {
+    Map<String, Object> r = new LinkedHashMap<>();
+    if (!(end instanceof IAssociationEnd)) {
+      return r;
+    }
+    IAssociationEnd e = (IAssociationEnd) end;
+    putIfText(r, "name", e.getName());
+    String mult = e.getMultiplicity();
+    if (mult != null && !"Unspecified".equals(mult)) {
+      putIfText(r, "multiplicity", mult);
+    }
+    String agg = e.getAggregationKind();
+    if (agg != null && !agg.isEmpty() && !"none".equalsIgnoreCase(agg)) {
+      r.put("aggregationKind", agg);
     }
     return r;
   }
@@ -537,6 +702,13 @@ final class VpModel {
       case IModelProperty.TYPE_PARENT_MODEL:
         IModelElement ref = p.getValueAsModel();
         return ref == null ? null : brief(ref);
+      case IModelProperty.TYPE_TEXT_MODEL:
+        // a type: either free text ("String") or a model element (a class of the model)
+        Object value = p.getValue();
+        if (value instanceof IModelElement) {
+          return brief((IModelElement) value);
+        }
+        return value == null ? null : truncate(p.getValueAsString());
       case IModelProperty.TYPE_MODEL_COLLECTION:
       case IModelProperty.TYPE_COMPOSITE_MODEL_COLLECTION:
         IModelElement[] items = p.getValueAsModelCollection();
@@ -617,6 +789,12 @@ final class VpModel {
       return r;
     }
     putIfText(r, "documentation", d.getDocumentation());
+    r.put("opened", d.isOpened());
+    if (!d.isOpened()) {
+      r.put(
+          "note",
+          "diagram is not open in VP: bounds may be stale until it is opened (vp_open_diagram)");
+    }
     List<Object> shapes = new ArrayList<>();
     IShapeUIModel[] sa = d.toShapeUIModelArray();
     if (sa != null) {

@@ -9,10 +9,12 @@ import com.vp.plugin.DiagramManager;
 import com.vp.plugin.ExportDiagramAsImageOption;
 import com.vp.plugin.ModelConvertionManager;
 import com.vp.plugin.ProjectManager;
+import com.vp.plugin.diagram.IConnectorUIModel;
 import com.vp.plugin.diagram.IDiagramElement;
 import com.vp.plugin.diagram.IDiagramUIModel;
 import com.vp.plugin.diagram.IShapeUIModel;
 import com.vp.plugin.model.IActor;
+import com.vp.plugin.model.IMessage;
 import com.vp.plugin.model.IModelElement;
 import com.vp.plugin.model.IProject;
 import com.vp.plugin.model.IProjectTransaction;
@@ -25,7 +27,6 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -324,29 +325,28 @@ public final class VpTools {
 
     r.addReadOnly(
         "vp_find_elements",
-        "Searches model elements of the whole project by type and/or name.",
+        "Searches model elements of the whole project, members (attributes, operations,"
+            + " parameters, columns) included, by type and/or name.",
         Schema.object()
-            .str("type", "Model type, e.g. UseCase, Actor, Class, DBTable", false)
+            .str("type", "Model type, e.g. UseCase, Actor, Class, Operation, DBTable", false)
             .str("name", "Exact name", false)
             .str("nameContains", "Case-insensitive substring of the name", false)
             .integer("limit", "Maximum results (default 200)", false),
         a ->
             read(
                 () -> {
-                  IProject p = VpModel.project();
                   String type = a.str("type", null);
                   String name = a.str("name", null);
                   String part = a.str("nameContains", null);
                   String partLc = part == null ? null : part.toLowerCase(Locale.ROOT);
                   int limit = a.integer("limit", 200);
-                  Iterator<?> it =
-                      type == null
-                          ? p.allLevelModelElementIterator()
-                          : p.allLevelModelElementIterator(type);
                   List<Object> out = new ArrayList<>();
                   int total = 0;
-                  while (it.hasNext()) {
-                    IModelElement m = (IModelElement) it.next();
+                  // members (attributes, operations, ...) are included
+                  for (IModelElement m : VpModel.allElements()) {
+                    if (type != null && !type.equals(m.getModelType())) {
+                      continue;
+                    }
                     String n = m.getName();
                     if (name != null && !name.equals(n)) {
                       continue;
@@ -393,20 +393,71 @@ public final class VpTools {
                   return m;
                 }));
 
-    r.addReadOnly(
+    r.add(
         "vp_list_types",
-        "Shape types that may be placed on the given diagram (use them as 'type').",
-        Schema.object().str("diagram", "Diagram id or name", true),
-        a ->
-            read(
-                () -> {
-                  IDiagramUIModel d = VpModel.diagram(a.str("diagram"));
-                  String[] types = d.getAllowShapeTypes();
-                  List<String> list = types == null ? new ArrayList<>() : Arrays.asList(types);
-                  Map<String, Object> m = ok("diagramType", d.getType());
-                  m.put("shapeTypes", list);
-                  return m;
-                }));
+        "Shape types that may be placed on a diagram (use them as 'type'). Accepts an existing"
+            + " diagram or a diagram type such as ClassDiagram.",
+        Schema.object()
+            .str("diagram", "Diagram id or name, or a diagram type (e.g. ClassDiagram)", true),
+        a -> ToolResult.json(Edt.call(() -> listTypes(a.str("diagram")), true)));
+  }
+
+  /** Allowed shape types per diagram type, filled whenever a diagram is asked. */
+  private static final Map<String, List<String>> SHAPE_TYPES = new java.util.HashMap<>();
+
+  private static Map<String, Object> listTypes(String ref) {
+    IDiagramUIModel d = null;
+    String type = null;
+    try {
+      d = VpModel.diagram(ref);
+    } catch (ToolException e) {
+      for (IDiagramUIModel x : VpModel.project().toDiagramArray()) {
+        if (ref.equalsIgnoreCase(x.getType())) {
+          d = x; // any diagram of that type answers for the type
+          break;
+        }
+      }
+      if (d == null) {
+        type = ref;
+      }
+    }
+    List<String> list;
+    String note = null;
+    if (d != null) {
+      type = d.getType();
+      list = shapeTypes(d);
+    } else if (SHAPE_TYPES.containsKey(type.toLowerCase(Locale.ROOT))) {
+      list = SHAPE_TYPES.get(type.toLowerCase(Locale.ROOT));
+    } else {
+      // no diagram of this type in the project: ask a temporary one
+      IDiagramUIModel tmp;
+      try {
+        tmp = VpModel.diagrams().createDiagram(ref);
+      } catch (RuntimeException ex) {
+        tmp = null;
+      }
+      if (tmp == null) {
+        throw new ToolException(
+            "No diagram and no diagram type '" + ref + "' (see vp_create_diagram for the types)");
+      }
+      type = tmp.getType();
+      list = shapeTypes(tmp);
+      tmp.delete();
+      note = "answered by a temporary diagram (created and deleted again)";
+    }
+    Map<String, Object> m = ok("diagramType", type);
+    m.put("shapeTypes", list);
+    if (note != null) {
+      m.put("note", note);
+    }
+    return m;
+  }
+
+  private static List<String> shapeTypes(IDiagramUIModel d) {
+    String[] types = d.getAllowShapeTypes();
+    List<String> list = types == null ? new ArrayList<>() : Arrays.asList(types);
+    SHAPE_TYPES.put(d.getType().toLowerCase(Locale.ROOT), list);
+    return list;
   }
 
   // ---------------------------------------------------------------- edit
@@ -490,8 +541,11 @@ public final class VpTools {
         "vp_add_connector",
         "Connects two shapes on a diagram with a relationship (Association, Include, Extend,"
             + " Generalization, ControlFlow, Message, Transition2, DBForeignKey, ...). If the same"
-            + " relationship (type, ends, name) already exists in the model, it is shown instead"
-            + " of creating a duplicate (reused=true); allowDuplicate=true forces a new one.",
+            + " relationship (type, ends, name; for associations also the given role names,"
+            + " multiplicities and aggregation) already exists in the model, it is shown instead"
+            + " of creating a duplicate (reused=true); allowDuplicate=true forces a new one. A"
+            + " further line between the same two shapes is drawn with a bend so that it does not"
+            + " cover the first; 'waypoints' sets the bends explicitly.",
         Schema.object()
             .str("diagram", "Diagram id or name", true)
             .str("type", "Relationship type (not needed with modelId)", false)
@@ -503,6 +557,11 @@ public final class VpTools {
             .bool(
                 "allowDuplicate",
                 "Create a new relationship even if an identical one already exists",
+                false)
+            .points(
+                "waypoints",
+                "Bend points [[x,y],...] in absolute diagram coordinates; the ends are placed on"
+                    + " the shape borders",
                 false)
             .str(
                 "extensionPoint",
@@ -531,13 +590,22 @@ public final class VpTools {
             .str("name", "Child name", false)
             .obj("properties", "e.g. {\"type\":\"String\",\"visibility\":\"private\"}", false)
             .objArray("children", "Nested children", false),
-        a -> write(() -> DiagramBuilder.addModelChild(VpModel.model(a.str("parentId")), a)));
+        a ->
+            write(
+                () -> {
+                  IModelElement parent = VpModel.model(a.str("parentId"));
+                  Map<String, Object> res = DiagramBuilder.addModelChild(parent, a);
+                  VpModel.refitOwnerViews(parent); // show the new member in the compartments
+                  return res;
+                }));
 
     r.add(
         "vp_update_element",
-        "Renames an element or diagram and/or sets its documentation and properties.",
+        "Renames an element, diagram or the project (id from vp_get_project_info) and/or sets"
+            + " its documentation and properties; 'waypoints' redraws a connector through bend"
+            + " points.",
         Schema.object()
-            .str("id", "Model element, shape or diagram id", true)
+            .str("id", "Model element, shape, connector, diagram or project id", true)
             .str("name", "New name", false)
             .str("documentation", "Description text", false)
             .obj("properties", "Properties to set (see vp_get_element)", false)
@@ -545,12 +613,40 @@ public final class VpTools {
                 "view",
                 "Presentation of a shape/connector (id must be a shape or connector id),"
                     + " e.g. {\"displayStereotypeIcon\":false}",
+                false)
+            .points(
+                "waypoints",
+                "Connector id only: bend points [[x,y],...] in absolute diagram coordinates ([]"
+                    + " = straight line); the ends are placed on the shape borders",
                 false),
         a ->
             write(
                 () -> {
                   String id = a.str("id");
-                  IDiagramUIModel d = VpModel.project().getDiagramById(id);
+                  IProject project = VpModel.project();
+                  if (id.equals(project.getId())) {
+                    return updateProject(project, a);
+                  }
+                  if (a.has("waypoints")) {
+                    IDiagramElement c = project.getDiagramElementById(id);
+                    if (!(c instanceof IConnectorUIModel)) {
+                      throw new ToolException("'waypoints' needs a connector id");
+                    }
+                    if (c.getModelElement() instanceof IMessage) {
+                      throw new ToolException(
+                          "Sequence messages are placed by their 'y' (vp_build_sequence)");
+                    }
+                    List<java.awt.Point> waypoints = Geometry.waypoints(a.list("waypoints"));
+                    IDiagramUIModel owner = c.getDiagramUIModel();
+                    if (owner != null && VpModel.ensureOpen(owner)) {
+                      // a diagram that was just opened is set up by VP in the next event
+                      javax.swing.SwingUtilities.invokeLater(
+                          () -> Geometry.route((IConnectorUIModel) c, waypoints));
+                    } else {
+                      Geometry.route((IConnectorUIModel) c, waypoints);
+                    }
+                  }
+                  IDiagramUIModel d = project.getDiagramById(id);
                   if (d != null) {
                     if (a.has("name")) {
                       d.setName(a.str("name"));
@@ -573,6 +669,12 @@ public final class VpTools {
                     }
                     VpModel.applyView(view, a.map("view"));
                   }
+                  if (a.has("waypoints")
+                      && !a.has("name")
+                      && !a.has("documentation")
+                      && a.map("properties").isEmpty()) {
+                    return VpModel.describeView(project.getDiagramElementById(id));
+                  }
                   IModelElement m = VpModel.model(id);
                   if (a.has("name")) {
                     m.setName(a.str("name"));
@@ -581,6 +683,9 @@ public final class VpTools {
                     m.setDocumentation(a.str("documentation"));
                   }
                   VpModel.apply(m, a.map("properties"));
+                  if (a.has("name") || !a.map("properties").isEmpty()) {
+                    VpModel.refitOwnerViews(m); // e.g. a longer member name or type
+                  }
                   return VpModel.describeModel(m, false);
                 }));
 
@@ -626,6 +731,26 @@ public final class VpTools {
                 }));
   }
 
+  private static Map<String, Object> updateProject(IProject p, Args a) {
+    if (a.has("documentation")
+        || !a.map("properties").isEmpty()
+        || !a.map("view").isEmpty()
+        || a.has("waypoints")) {
+      throw new ToolException("Only the 'name' of a project can be changed");
+    }
+    if (a.has("name")) {
+      try {
+        p.setName(a.str("name"));
+      } catch (UnsupportedOperationException e) {
+        throw new ToolException("Visual Paradigm does not allow renaming this project");
+      }
+    }
+    Map<String, Object> m = ok("id", p.getId());
+    m.put("name", p.getName());
+    m.put("modified", p.isModified());
+    return m;
+  }
+
   // -------------------------------------------------------- diagram ops
 
   private static final Map<String, Integer> LAYOUTS = new LinkedHashMap<>();
@@ -651,10 +776,9 @@ public final class VpTools {
    * opened first and the work runs in the next event, after VP has set it up.
    */
   private static Object layout(IDiagramUIModel d, String style) {
-    if (d.isOpened()) {
+    if (!VpModel.ensureOpen(d)) {
       return doLayout(d, style);
     }
-    VpModel.diagrams().openDiagram(d);
     javax.swing.SwingUtilities.invokeLater(
         () -> {
           try {
@@ -718,7 +842,8 @@ public final class VpTools {
         "Creates many shapes and connectors in one step (one undo step). Each element:"
             + " {key, type, name, x?, y?, width?, height?, parent?: key|id, properties?,"
             + " children?: [{type, name, properties, children}]}. Each connector: {type, from:"
-            + " key|id|name, to: key|id|name, name?, properties?}. Elements are created in order"
+            + " key|id|name, to: key|id|name, name?, properties?, waypoints?: [[x,y],...]}."
+            + " Elements are created in order"
             + " (containers before their content). x/y are absolute diagram coordinates, also"
             + " for shapes inside a parent; omit them for automatic placement. An element whose"
             + " name already exists in the same container is reused (VP forbids duplicate"
@@ -872,14 +997,17 @@ public final class VpTools {
                 Edt.call(
                     () -> {
                       IDiagramUIModel d = VpModel.diagram(a.str("diagram"));
-                      VpModel.diagrams().openDiagram(d);
+                      if (!VpModel.ensureOpen(d)) {
+                        VpModel.diagrams().openDiagram(d); // bring it to the front
+                      }
                       return ok("opened", d.getName());
                     })));
 
     r.add(
         "vp_export_diagram_image",
         "Renders a diagram to an image. Without 'path' (or with returnImage=true) the PNG is"
-            + " returned so you can look at the diagram.",
+            + " returned so you can look at the diagram. A diagram that is not open in VP is"
+            + " opened first (VP renders closed diagrams with stale shape sizes).",
         Schema.object()
             .str("diagram", "Diagram id or name", true)
             .str("path", "Write the image to this file", false)
@@ -909,6 +1037,12 @@ public final class VpTools {
     File inline = returnImage ? File.createTempFile("vp-diagram-", "." + format) : null;
     int type = imageType(format);
     final File outFile = out;
+    // a closed diagram is exported with stale/default shape sizes: open it first and render it
+    // in a later event, after VP has loaded its layout
+    boolean opened = Edt.call(() -> VpModel.ensureOpen(VpModel.diagram(a.str("diagram"))));
+    if (opened) {
+      Edt.call(() -> null);
+    }
     String name =
         Edt.call(
             () -> {
@@ -931,7 +1065,11 @@ public final class VpTools {
       }
       ToolResult result =
           ToolResult.text(
-              "Diagram '" + name + "' exported" + (hasPath ? " to " + outFile.getPath() : ""));
+              "Diagram '"
+                  + name
+                  + "' exported"
+                  + (hasPath ? " to " + outFile.getPath() : "")
+                  + (opened ? " (it was opened in VP first)" : ""));
       if (inline != null) {
         byte[] bytes = Files.readAllBytes(inline.toPath());
         result.addImage(

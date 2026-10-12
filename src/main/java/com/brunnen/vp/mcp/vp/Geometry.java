@@ -1,5 +1,6 @@
 package com.brunnen.vp.mcp.vp;
 
+import com.brunnen.vp.mcp.protocol.ToolException;
 import com.vp.plugin.diagram.ICaptionUIModel;
 import com.vp.plugin.diagram.IConnectorUIModel;
 import com.vp.plugin.diagram.IDiagramElement;
@@ -116,6 +117,9 @@ final class Geometry {
     if (from == null || to == null) {
       return;
     }
+    if (isSelfLoop(c) && !(c.getModelElement() instanceof IMessage)) {
+      return; // keep VP's loop
+    }
     Point[] old = c.getPoints();
     Point[] pts;
     if (c.getModelElement() instanceof IMessage && old != null && old.length > 0) {
@@ -130,10 +134,19 @@ final class Geometry {
         pts = new Point[] {new Point(centerX(from), y), new Point(centerX(to), y)};
       }
     } else {
-      Point a = center(from);
-      Point b = center(to);
-      pts = new Point[] {border(from, b), border(to, a)};
+      Point bend = parallelBend(c);
+      if (bend != null) {
+        pts = new Point[] {border(from, bend), bend, border(to, bend)};
+      } else {
+        Point a = center(from);
+        Point b = center(to);
+        pts = new Point[] {border(from, b), border(to, a)};
+      }
     }
+    setPoints(c, pts);
+  }
+
+  private static void setPoints(IConnectorUIModel c, Point[] pts) {
     c.clearPoints();
     for (Point p : pts) {
       c.addPoint(p);
@@ -141,6 +154,126 @@ final class Geometry {
     c.setRequestRebuild(true);
     DiagramBuilder.resetCaption(c);
     scheduleCaptionBeside(c);
+  }
+
+  /**
+   * Draws a connector through the given bend points (absolute diagram coordinates); its ends are
+   * placed on the borders of the two shapes, towards the first and the last bend. No bends: a
+   * straight line (or a bent one when other connectors join the same shapes).
+   */
+  static void route(IConnectorUIModel c, List<Point> waypoints) {
+    IDiagramElement from = c.getFromShape() != null ? c.getFromShape() : c.getFromConnector();
+    IDiagramElement to = c.getToShape() != null ? c.getToShape() : c.getToConnector();
+    if (from == null || to == null || waypoints == null || waypoints.isEmpty()) {
+      reroute(c);
+      return;
+    }
+    Point[] pts = new Point[waypoints.size() + 2];
+    pts[0] = border(from, waypoints.get(0));
+    for (int i = 0; i < waypoints.size(); i++) {
+      pts[i + 1] = waypoints.get(i);
+    }
+    pts[pts.length - 1] = border(to, waypoints.get(waypoints.size() - 1));
+    setPoints(c, pts);
+  }
+
+  /** Bend points from JSON: [[x, y], ...] or [{"x": .., "y": ..}, ...]. */
+  static List<Point> waypoints(List<Object> raw) {
+    List<Point> out = new ArrayList<>();
+    for (Object o : raw) {
+      if (o instanceof List && ((List<?>) o).size() == 2) {
+        List<?> xy = (List<?>) o;
+        out.add(new Point(number(xy.get(0)), number(xy.get(1))));
+      } else if (o instanceof Map) {
+        Map<?, ?> m = (Map<?, ?>) o;
+        out.add(new Point(number(m.get("x")), number(m.get("y"))));
+      } else {
+        throw new ToolException("waypoints: each point is [x, y] or {x, y}, got " + o);
+      }
+    }
+    return out;
+  }
+
+  private static int number(Object o) {
+    if (!(o instanceof Number)) {
+      throw new ToolException("waypoints: coordinates must be numbers, got " + o);
+    }
+    return (int) Math.round(((Number) o).doubleValue());
+  }
+
+  /** A connector from a shape to itself (VP draws its loop; a straight line would vanish). */
+  static boolean isSelfLoop(IConnectorUIModel c) {
+    IDiagramElement from = c.getFromShape() != null ? c.getFromShape() : c.getFromConnector();
+    IDiagramElement to = c.getToShape() != null ? c.getToShape() : c.getToConnector();
+    return from != null && to != null && from.getId().equals(to.getId());
+  }
+
+  /** Distance between parallel connectors that join the same two shapes. */
+  static final int PARALLEL_GAP = 30;
+
+  /**
+   * Position of {@code c} among the connectors that join the same two shapes on its diagram (in
+   * either direction): 0 for the first one, which stays straight.
+   */
+  static int parallelIndex(IConnectorUIModel c) {
+    IShapeUIModel a = c.getFromShape();
+    IShapeUIModel b = c.getToShape();
+    if (a == null || b == null || a.getId().equals(b.getId()) || c.getDiagramUIModel() == null) {
+      return 0;
+    }
+    int index = 0;
+    for (IConnectorUIModel o : c.getDiagramUIModel().toConnectorUIModelArray()) {
+      if (o.getId().equals(c.getId())) {
+        return index;
+      }
+      if (o.getModelElement() instanceof IMessage
+          || o.getFromShape() == null
+          || o.getToShape() == null) {
+        continue;
+      }
+      String f = o.getFromShape().getId();
+      String t = o.getToShape().getId();
+      if ((f.equals(a.getId()) && t.equals(b.getId()))
+          || (f.equals(b.getId()) && t.equals(a.getId()))) {
+        index++;
+      }
+    }
+    return 0;
+  }
+
+  private static Point parallelBend(IConnectorUIModel c) {
+    int index = parallelIndex(c);
+    if (index == 0) {
+      return null;
+    }
+    IShapeUIModel a = c.getFromShape();
+    IShapeUIModel b = c.getToShape();
+    if (a.getId().compareTo(b.getId()) > 0) { // the same side whichever way the line runs
+      IShapeUIModel tmp = a;
+      a = b;
+      b = tmp;
+    }
+    return parallelBend(center(a), center(b), index);
+  }
+
+  /**
+   * Bend point for the {@code index}-th extra line between two shape centres: beside the middle of
+   * the straight line, alternately on either side and further out (index 1: +gap, 2: -gap, 3: +2
+   * gap, ...).
+   */
+  static Point parallelBend(Point a, Point b, int index) {
+    double dx = b.x - a.x;
+    double dy = b.y - a.y;
+    double len = Math.hypot(dx, dy);
+    if (index <= 0 || len == 0) {
+      return null;
+    }
+    int k = (index + 1) / 2;
+    double offset = (index % 2 == 1 ? 1 : -1) * k * PARALLEL_GAP;
+    double mx = (a.x + b.x) / 2.0;
+    double my = (a.y + b.y) / 2.0;
+    return new Point(
+        (int) Math.round(mx - dy / len * offset), (int) Math.round(my + dx / len * offset));
   }
 
   /** Stereotype labels whose default position on a steep line covers the arrow head. */
@@ -210,6 +343,58 @@ final class Geometry {
   /** Shapes whose size follows their compartments (members, columns, literals). */
   static final Set<String> FIT_TO_CONTENT =
       new HashSet<>(Arrays.asList("Class", "InterfaceClass", "Enumeration", "DBTable"));
+
+  /**
+   * Fits classes, tables and enumerations of a diagram to their compartments without making them
+   * smaller (a size chosen by the user stays); connectors of shapes that grew are re-routed.
+   */
+  static void growToContent(IDiagramUIModel d) {
+    IShapeUIModel[] shapes = d.toShapeUIModelArray();
+    if (shapes == null) {
+      return;
+    }
+    for (IShapeUIModel s : shapes) {
+      if (!FIT_TO_CONTENT.contains(s.getShapeType())) {
+        continue;
+      }
+      int w = s.getWidth();
+      int h = s.getHeight();
+      s.fitSize();
+      int nw = Math.max(w, s.getWidth());
+      int nh = Math.max(h, s.getHeight());
+      if (nw != s.getWidth() || nh != s.getHeight()) {
+        s.setSize(nw, nh);
+      }
+      if (nw != w || nh != h) {
+        for (IConnectorUIModel c : attached(s)) {
+          reroute(c);
+        }
+      }
+    }
+    keepSizes(d);
+  }
+
+  /**
+   * Shapes created through the API keep VP's "request default size" flag until the diagram is
+   * painted in an editor. If the project is saved before that, VP applies the flag when it loads
+   * the diagram again and every such shape comes back with its default size (classes 80x40). The
+   * flag is cleared for every shape that already has a real size.
+   */
+  static void keepSizes(IDiagramUIModel d) {
+    IShapeUIModel[] shapes = d.toShapeUIModelArray();
+    if (shapes == null) {
+      return;
+    }
+    for (IShapeUIModel s : shapes) {
+      try {
+        if (s.isRequestDefaultSize() && s.getWidth() > 0 && s.getHeight() > 0) {
+          s.setRequestDefaultSize(false);
+        }
+      } catch (RuntimeException e) {
+        // not every shape supports it
+      }
+    }
+  }
 
   /** Shapes drawn as ellipses/circles: connectors must end on the curve, not the bounding box. */
   static final Set<String> ELLIPTIC =

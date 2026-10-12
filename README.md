@@ -47,13 +47,13 @@ class, ER and state machine diagrams are tested.
 | `vp_new_project`, `vp_open_project`, `vp_save_project` | Project files |
 | `vp_list_diagrams`, `vp_get_diagram` | Diagrams and their shapes/connectors |
 | `vp_find_elements`, `vp_get_element` | Search the model, read properties, relationships, flows of events |
-| `vp_list_types` | Shape types a diagram accepts |
+| `vp_list_types` | Shape types a diagram (or diagram type) accepts |
 | `vp_get_view` | Presentation properties of a shape, connector or diagram (keys for `view`) |
 | `vp_create_diagram` | Create any diagram type |
 | `vp_build_diagram` | Many shapes and connectors in one call, referenced by own keys |
 | `vp_build_sequence` | Complete sequence diagram from participants and steps: activation bars, create/destroy, self calls, async and reply messages, combined fragments (alt, opt, loop, par, break, ...) with guards, interaction uses (ref), `sd` frame |
-| `vp_add_shape`, `vp_add_connector`, `vp_add_child` | Single elements, relationships, members (attributes, operations, columns, ...) |
-| `vp_update_element`, `vp_delete`, `vp_set_bounds` | Rename, set properties, delete (model or view only), move with connectors |
+| `vp_add_shape`, `vp_add_connector`, `vp_add_child` | Single elements, relationships (optionally with bend points), members (attributes, operations, columns, ...) |
+| `vp_update_element`, `vp_delete`, `vp_set_bounds` | Rename (also the project), set properties, redraw a connector through bend points, delete (model or view only), move with connectors |
 | `vp_set_use_case_details` | Pre/post conditions, actors, flows of events |
 | `vp_cleanup_extension_points` | Remove the "ExtensionPoint" entries VP adds for every Extend |
 | `vp_layout_diagram`, `vp_open_diagram` | Automatic layout (`layered` for class/ER diagrams, `boundary` for System boundaries, `reroute` to redraw connectors only), show in VP |

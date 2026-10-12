@@ -118,8 +118,36 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
 - «include»/«extend» labels on steep lines are moved beside the middle of the line two events
   after VP laid them out (`Geometry.scheduleCaptionBeside`).
 
+### v0.4.2: fixes reported by session sa-9f
+- Shapes created through the API keep VP's `requestDefaultSize` flag until the diagram is painted
+  in an editor; a project saved before that comes back with default-sized shapes (classes 80x40)
+  when VP loads the diagram again (also after VP unloads a closed diagram: "Garbage collection
+  diagram" in vp.log). Builds clear the flag for every shape with a real size
+  (`Geometry.keepSizes`); when the tools open a closed diagram (`VpModel.ensureOpen`: builds,
+  layouts, exports, `vp_open_diagram`, waypoints) classes/tables/enumerations are fitted to their
+  content without shrinking (`Geometry.growToContent`), which repairs already damaged diagrams.
+- `vp_export_diagram_image` opens a closed diagram first and exports in a later event; closed
+  diagrams were rendered with stale/default sizes. `vp_get_diagram` reports `opened`.
+- `vp_add_child` / member changes refit the owner's shapes (`setRequestFitSize` for closed
+  diagrams, `fitSize` on open ones), so new members show up in the compartments.
+- Association reuse compares the given role names, multiplicities and aggregation kinds
+  (`DiagramBuilder.sameEnds`, both directions); two compositions with different roles are no
+  longer merged. Association ends are reported as `fromEnd`/`toEnd`.
+- Properties of type `TYPE_TEXT_MODEL` (attribute/parameter `type`, operation `returnType`) were
+  dropped; they are read now, and members get `dataType`/`returnType` (with type modifier) in
+  every description. `vp_find_elements` includes members (the all-level iterator skips them).
+- Connectors: `waypoints` (bend points; ends on the shape borders) on `vp_add_connector`, build
+  connectors and `vp_update_element`. A further connector between the same two shapes gets a bend
+  (`Geometry.parallelIndex`/`parallelBend`, also in `reroute`). New connectors are drawn between
+  the shape borders after a build (VP starts them at a corner, often along the top edges). VP
+  itself moves the ends of a bent connector to a corner of the shape; pin ratios
+  (`fromPinType`=RATIO) gave unusable points and are not used.
+- `vp_update_element` with the project id renames the project (`IProject.setName`).
+- `vp_list_types` accepts a diagram type; without a diagram of that type it asks a temporary
+  diagram (created and deleted, so the project is marked modified). Answers are cached per type.
+
 ### Tested
-- `./run test`: 31 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
+- `./run test`: 37 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
   (pre-commit itself is not installed on this machine; its generic checks were done by hand).
 - Manually through MCP in VP CE 18.1: use case (system boundary, include/extend/generalization,
   use case specification), class (members, abstract, stereotype, realization, dependency,
@@ -133,3 +161,7 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
   untested.
 - Swimlane height is fixed (560 / 180 per lane) and is not shrunk to its content.
 - No MCP resources/prompts yet.
+- Parallel connectors share VP's corner end points (labels at that end may overlap); classes that
+  grow after new members can overlap their neighbours.
+- Use case `boundary` layout puts use cases in one column; an extend/include between the first
+  and the last use case can pass over the middle one.

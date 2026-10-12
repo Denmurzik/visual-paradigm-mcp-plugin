@@ -12,6 +12,8 @@ import com.vp.plugin.diagram.shape.IActivitySwimlane2CompartmentUIModel;
 import com.vp.plugin.diagram.shape.IActivitySwimlane2NewUIModel;
 import com.vp.plugin.model.IActivityPartition;
 import com.vp.plugin.model.IActivitySwimlane2;
+import com.vp.plugin.model.IAssociationEnd;
+import com.vp.plugin.model.IEndRelationship;
 import com.vp.plugin.model.IExtend;
 import com.vp.plugin.model.IExtensionPoint;
 import com.vp.plugin.model.IMessage;
@@ -47,10 +49,14 @@ final class DiagramBuilder {
 
   private final Map<String, IModelElement> modelKeys = new HashMap<>();
   private final List<IShapeUIModel> refit = new ArrayList<>();
+  private final Map<IConnectorUIModel, List<Point>> routed = new LinkedHashMap<>();
 
   DiagramBuilder(IDiagramUIModel diagram) {
     this.diagram = diagram;
     VpModel.BATCH_KEYS.set(modelKeys);
+    // VP drops the layout state of diagrams that are not open (shapes report 0x0 and are exported
+    // with default sizes); open the diagram so that new shapes get their real size
+    VpModel.ensureOpen(diagram);
   }
 
   IDiagramUIModel diagram() {
@@ -455,9 +461,11 @@ final class DiagramBuilder {
     if (!existing && DEDUPLICATED.contains(type) && !spec.bool("allowDuplicate", false)) {
       // the same relationship between the same elements usually exists already (drawn on
       // another diagram); show it instead of creating a duplicate in the model
-      IModelElement same = findRelationship(type, fromModel, toModel, spec.str("name", null));
+      String name = spec.str("name", null);
+      Map<String, Object> props = spec.map("properties");
+      IModelElement same = findRelationship(type, fromModel, toModel, name, props);
       if (same == null && "Association".equals(type)) {
-        same = findRelationship(type, toModel, fromModel, spec.str("name", null));
+        same = findRelationship(type, toModel, fromModel, name, swapEnds(props));
       }
       if (same != null) {
         rel = same;
@@ -543,6 +551,16 @@ final class DiagramBuilder {
               + type);
     }
     VpModel.applyView(created, spec.map("view"));
+    if (created instanceof IConnectorUIModel && !(rel instanceof IMessage)) {
+      IConnectorUIModel c = (IConnectorUIModel) created;
+      if (spec.has("waypoints")) {
+        List<Point> waypoints = Geometry.waypoints(spec.list("waypoints"));
+        Geometry.route(c, waypoints);
+        routed.put(c, waypoints);
+      } else if (Geometry.parallelIndex(c) > 0) {
+        Geometry.reroute(c); // a second line between the same shapes gets a bend
+      }
+    }
     resetCaption(created);
     this.created.add(created);
     if (spec.has("key")) {
@@ -574,10 +592,11 @@ final class DiagramBuilder {
 
   /**
    * Existing relationship of {@code type} whose VP "from" is {@code a} and "to" is {@code b}, with
-   * the same name (no name matches an unnamed relationship).
+   * the same name (no name matches an unnamed relationship) and, for associations, the same role
+   * names, multiplicities and aggregation as far as {@code props} gives them.
    */
   static IModelElement findRelationship(
-      String type, IModelElement a, IModelElement b, String name) {
+      String type, IModelElement a, IModelElement b, String name, Map<String, Object> props) {
     if (a == null || b == null) {
       return null;
     }
@@ -600,11 +619,69 @@ final class DiagramBuilder {
           && rel.getTo() != null
           && rel.getFrom().getId().equals(a.getId())
           && rel.getTo().getId().equals(b.getId())
-          && wanted.equals(have)) {
+          && wanted.equals(have)
+          && sameEnds(props, endValues(rel))) {
         return rel;
       }
     }
     return null;
+  }
+
+  /** End properties compared before an association is reused. */
+  static final List<String> END_KEYS = Arrays.asList("name", "multiplicity", "aggregationKind");
+
+  /** "from.name", "to.multiplicity", ... of an association (VP from/to). */
+  private static Map<String, String> endValues(IRelationship rel) {
+    Map<String, String> out = new HashMap<>();
+    if (rel instanceof IEndRelationship) {
+      putEnd(out, "from.", ((IEndRelationship) rel).getFromEnd());
+      putEnd(out, "to.", ((IEndRelationship) rel).getToEnd());
+    }
+    return out;
+  }
+
+  private static void putEnd(Map<String, String> out, String prefix, IRelationshipEnd end) {
+    if (end instanceof IAssociationEnd) {
+      IAssociationEnd e = (IAssociationEnd) end;
+      out.put(prefix + "name", e.getName());
+      out.put(prefix + "multiplicity", e.getMultiplicity());
+      out.put(prefix + "aggregationKind", e.getAggregationKind());
+    }
+  }
+
+  /**
+   * Whether every end property given in {@code props} (role name, multiplicity, aggregation kind)
+   * equals the existing value; ends that are not mentioned do not matter.
+   */
+  static boolean sameEnds(Map<String, Object> props, Map<String, String> existing) {
+    if (props == null) {
+      return true;
+    }
+    for (Map.Entry<String, Object> e : props.entrySet()) {
+      String key = e.getKey();
+      int dot = key.indexOf('.');
+      if (dot <= 0 || !END_KEYS.contains(key.substring(dot + 1))) {
+        continue;
+      }
+      String prop = key.substring(dot + 1);
+      String wanted = normalizeEnd(prop, e.getValue() == null ? "" : String.valueOf(e.getValue()));
+      String have = normalizeEnd(prop, existing.get(key));
+      if (!wanted.equals(have)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static String normalizeEnd(String prop, String value) {
+    String v = value == null ? "" : value.trim();
+    if ("multiplicity".equals(prop) && "Unspecified".equalsIgnoreCase(v)) {
+      return "";
+    }
+    if ("aggregationKind".equals(prop)) {
+      return VpModel.aggregationKind(v);
+    }
+    return v;
   }
 
   private static void addAll(List<IModelElement> out, IModelElement[] arr) {
@@ -725,6 +802,7 @@ final class DiagramBuilder {
     VpModel.BATCH_KEYS.remove();
     List<IDiagramElement> all = new ArrayList<>(created);
     List<IShapeUIModel> fit = new ArrayList<>(refit);
+    Map<IConnectorUIModel, List<Point>> fixed = new LinkedHashMap<>(routed);
     SwingUtilities.invokeLater(
         () -> {
           // VP lays out compartments (members, literals) only after the creating event; size
@@ -746,6 +824,20 @@ final class DiagramBuilder {
             } catch (RuntimeException e) {
               // cosmetic
             }
+          }
+          Geometry.keepSizes(diagram);
+          // VP starts new connectors at a corner of the shapes (often running along their top
+          // edges): draw them between the shape borders, with bends where requested
+          for (IDiagramElement de : all) {
+            if (de instanceof IConnectorUIModel
+                && !(de.getModelElement() instanceof IMessage)
+                && !fixed.containsKey(de)
+                && !Geometry.isSelfLoop((IConnectorUIModel) de)) {
+              Geometry.reroute((IConnectorUIModel) de);
+            }
+          }
+          for (Map.Entry<IConnectorUIModel, List<Point>> e : fixed.entrySet()) {
+            Geometry.route(e.getKey(), e.getValue());
           }
           for (IDiagramElement de : all) {
             resetCaption(de);
