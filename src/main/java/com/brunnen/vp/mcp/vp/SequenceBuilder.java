@@ -467,14 +467,13 @@ final class SequenceBuilder {
       if (m.toAct != null && m.toAct.shape != null) {
         msg.setToActivation((IActivation) m.toAct.shape.getModelElement());
       }
-      // the sending end is attached to the lifeline: VP stores a source end on an activation
-      // relative to it when the project is reopened, which breaks the line in the editor
+      // both ends are attached to the lifelines, the points reach the activation bars: VP stores
+      // a source end on an activation relative to it when the project is reopened, and a
+      // message whose target end is an activation loses its receiver (model and view)
       IDiagramElement fromView = m.from.shape;
-      IDiagramElement toView =
-          m.toAct != null && m.toAct.shape != null ? m.toAct.shape : m.to.shape;
+      IDiagramElement toView = m.to.shape;
       if ("create".equals(kind)) {
-        toView = m.to.shape; // a create message points at the new object's head
-        m.to.shape.setY(m.to.headY);
+        m.to.shape.setY(m.to.headY); // a create message points at the new object's head
       }
       Point[] pts = points(m);
       IDiagramElement view =

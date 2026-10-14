@@ -127,5 +127,8 @@ move them (`vp_set_bounds`) or re-layout.
 - `vp_get_view` lists presentation properties of a shape or diagram (keys usable in `view`).
 - `vp_list_types` lists the shape types a diagram (or a diagram type such as `ClassDiagram`)
   accepts when a type is refused.
+- A message whose `vp_get_element` shows `to: {}` has lost its receiver (sequence diagrams built
+  with plugin versions before 0.4.3): the picture still looks right, but the model is wrong.
+  Re-create such messages or rebuild the diagram with `vp_build_sequence`.
 - Errors from the tools name the problem (unknown property, ambiguous name, refused connection);
   fix the input instead of repeating the same call.

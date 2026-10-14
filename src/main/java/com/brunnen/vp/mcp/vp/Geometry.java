@@ -285,7 +285,9 @@ final class Geometry {
    * the line. Other connectors keep VP's placement.
    */
   static void scheduleCaptionBeside(IConnectorUIModel c) {
-    if (c.getModelElement() == null || !SIDE_CAPTION.contains(c.getModelElement().getModelType())) {
+    boolean selfMessage = c.getModelElement() instanceof IMessage && isSelfLoop(c);
+    if (c.getModelElement() == null
+        || !(selfMessage || SIDE_CAPTION.contains(c.getModelElement().getModelType()))) {
       return;
     }
     javax.swing.SwingUtilities.invokeLater(
@@ -293,11 +295,35 @@ final class Geometry {
             javax.swing.SwingUtilities.invokeLater(
                 () -> {
                   try {
-                    placeCaptionBeside(c);
+                    if (selfMessage) {
+                      placeSelfMessageCaption(c);
+                    } else {
+                      placeCaptionBeside(c);
+                    }
                   } catch (RuntimeException e) {
                     // cosmetic
                   }
                 }));
+  }
+
+  /**
+   * VP places the label of a message from a lifeline to itself far away from the loop; it goes
+   * above the loop's first segment.
+   */
+  static void placeSelfMessageCaption(IConnectorUIModel c) {
+    ICaptionUIModel cap = c.getCaptionUIModel();
+    Point[] p = c.getPoints();
+    if (cap == null || cap.getHeight() <= 0 || p == null || p.length < 2) {
+      return;
+    }
+    Point at = captionAboveLoop(p[0], cap.getHeight());
+    cap.setX(at.x);
+    cap.setY(at.y);
+  }
+
+  /** Top-left corner for a label of height h just above the start of a self-message loop. */
+  static Point captionAboveLoop(Point start, int h) {
+    return new Point(start.x + 4, start.y - h - 2);
   }
 
   static void placeCaptionBeside(IConnectorUIModel c) {

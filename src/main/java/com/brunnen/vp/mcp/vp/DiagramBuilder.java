@@ -447,6 +447,11 @@ final class DiagramBuilder {
         spec.has("modelId") ? VpModel.model(spec.str("modelId")).getModelType() : spec.str("type");
     IDiagramElement from = resolve(spec.str("from"));
     IDiagramElement to = resolve(spec.str("to"));
+    if ("Message".equals(type)) {
+      // a message whose end is an activation loses that end in VP (no receiver in the model)
+      from = lifelineOf(from);
+      to = lifelineOf(to);
+    }
     if (REVERSED_IN_VP.contains(type)) {
       IDiagramElement tmp = from;
       from = to;
@@ -574,6 +579,17 @@ final class DiagramBuilder {
       r.put("key", spec.str("key"));
     }
     return r;
+  }
+
+  /** The lifeline shape that holds an activation bar (the shape itself otherwise). */
+  static IDiagramElement lifelineOf(IDiagramElement view) {
+    IDiagramElement v = view;
+    while (v instanceof IShapeUIModel
+        && "Activation".equals(v.getShapeType())
+        && ((IShapeUIModel) v).getParent() != null) {
+      v = ((IShapeUIModel) v).getParent();
+    }
+    return v;
   }
 
   /** Relationship types that are not duplicated between the same two elements. */

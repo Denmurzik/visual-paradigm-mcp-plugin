@@ -380,6 +380,12 @@ final class VpModel {
     if (de != null) {
       return de;
     }
+    de = project().getDiagramElementById(ref); // nested shapes (activations) are not always found
+    if (de != null
+        && de.getDiagramUIModel() != null
+        && diagram.getId().equals(de.getDiagramUIModel().getId())) {
+      return de;
+    }
     IModelElement m = project().getModelElementById(ref);
     if (m != null) {
       for (IDiagramElement v : m.getDiagramElements()) {

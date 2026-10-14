@@ -50,6 +50,11 @@ class GeometryTest {
   }
 
   @Test
+  void selfMessageLabelGoesAboveTheLoop() {
+    assertEquals(new Point(439, 318), Geometry.captionAboveLoop(new Point(435, 335), 15));
+  }
+
+  @Test
   void parallelLinesBendAlternatelyToBothSides() {
     Point a = new Point(0, 0);
     Point b = new Point(100, 0);

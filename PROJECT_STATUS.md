@@ -146,8 +146,24 @@ runtime. The previous Spring Boot 3 / Spring AI implementation needs Java 17 and
 - `vp_list_types` accepts a diagram type; without a diagram of that type it asks a temporary
   diagram (created and deleted, so the project is marked modified). Answers are cached per type.
 
+### v0.4.3: messages lost their receiver
+- A message whose target end is an activation shape loses its receiver in VP: the model's `to`
+  end has no element and the connector has no `toShape` (right after creation and in the saved
+  file); only the stored points keep the picture right. `vp_build_sequence` attached every call
+  and return to the receiver's activation bar, so nearly all its messages had no receiver
+  (`vp_get_element` showed `to: {}`). Both ends are now attached to the lifelines (the source end
+  already was, see v0.4.0); `IMessage.setFromActivation`/`setToActivation` still link the bars.
+  VP puts the ends of lifeline-attached messages on the lifeline's centre line, so arrow heads
+  reach half an activation bar into it.
+- `vp_add_connector` / build connectors of type Message given an activation shape use its
+  lifeline; activation shape ids are found (`IProject.getDiagramElementById` fallback).
+- VP places the label of a message from a lifeline to itself far from the loop; it is moved
+  above the loop's first segment (`Geometry.placeSelfMessageCaption`).
+- Diagrams built with older versions keep messages without a receiver; rebuild them (or re-create
+  the messages) to repair the model.
+
 ### Tested
-- `./run test`: 37 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
+- `./run test`: 38 unit tests; `mvn fmt:format` and `mvn checkstyle:check` clean
   (pre-commit itself is not installed on this machine; its generic checks were done by hand).
 - Manually through MCP in VP CE 18.1: use case (system boundary, include/extend/generalization,
   use case specification), class (members, abstract, stereotype, realization, dependency,
